@@ -53,7 +53,7 @@ struct MainTabView: View {
         case .recording(let type):
             NavigationStack {
                 RecordingView(
-                    viewModel: diContainer.makeRecordingViewModel(type: type)
+                    viewModel: diContainer.makeRecordingViewModel(recordType: type)
                 )
             }
             

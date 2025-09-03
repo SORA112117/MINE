@@ -112,9 +112,9 @@ class DIContainer: ObservableObject {
     }
     
     @MainActor
-    func makeRecordingViewModel(type: RecordType) -> RecordingViewModel {
+    func makeRecordingViewModel(recordType: RecordType) -> RecordingViewModel {
         RecordingViewModel(
-            recordType: type,
+            recordType: recordType,
             createRecordUseCase: createRecordUseCase,
             mediaService: mediaService,
             manageTemplatesUseCase: manageTemplatesUseCase
