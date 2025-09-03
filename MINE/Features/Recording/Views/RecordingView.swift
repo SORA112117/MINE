@@ -55,8 +55,8 @@ struct RecordingView: View {
     private var videoRecordingView: some View {
         ZStack {
             // カメラプレビュー
-            if viewModel.cameraManager.permissionGranted {
-                CameraPreviewView(cameraManager: viewModel.cameraManager)
+            if let cameraManager = viewModel.cameraManager, cameraManager.permissionGranted {
+                CameraPreviewView(cameraManager: cameraManager)
                     .ignoresSafeArea()
                 
                 // 録画コントロール
@@ -71,7 +71,7 @@ struct RecordingView: View {
                 }
             } else if viewModel.showPermissionDenied {
                 // 権限拒否画面
-                PermissionDeniedView()
+                permissionDeniedView
             } else {
                 // ローディング
                 ProgressView("カメラを準備中...")
@@ -337,5 +337,61 @@ struct RecordingView: View {
                     .fill(Color.black.opacity(0.9))
             )
         }
+    }
+    
+    // MARK: - Permission Denied View
+    private var permissionDeniedView: some View {
+        VStack(spacing: 30) {
+            Image(systemName: "video.slash")
+                .font(.system(size: 80))
+                .foregroundColor(.red)
+            
+            VStack(spacing: 16) {
+                Text("カメラへのアクセスが必要です")
+                    .font(.title2)
+                    .fontWeight(.bold)
+                    .foregroundColor(.white)
+                
+                Text("ビデオを録画するためにカメラの権限が必要です。設定から権限を許可してください。")
+                    .font(.body)
+                    .foregroundColor(.white.opacity(0.8))
+                    .multilineTextAlignment(.center)
+                    .padding(.horizontal)
+            }
+            
+            VStack(spacing: 16) {
+                // 設定アプリを開くボタン
+                Button(action: {
+                    if let settingsURL = URL(string: UIApplication.openSettingsURLString) {
+                        UIApplication.shared.open(settingsURL)
+                    }
+                }) {
+                    HStack {
+                        Image(systemName: "gear")
+                        Text("設定を開く")
+                    }
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 16)
+                    .background(Theme.primary)
+                    .cornerRadius(12)
+                }
+                
+                // キャンセルボタン
+                Button(action: {
+                    dismiss()
+                }) {
+                    Text("キャンセル")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 16)
+                        .background(Color.gray.opacity(0.3))
+                        .cornerRadius(12)
+                }
+            }
+        }
+        .padding()
     }
 }

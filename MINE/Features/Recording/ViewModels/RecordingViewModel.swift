@@ -12,8 +12,10 @@ class RecordingViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var recordingCompleted = false
-    @Published var cameraManager: CameraManager
-    @Published var audioRecorderService: AudioRecorderService
+    
+    // 遅延初期化に変更してクラッシュを防ぐ
+    @Published var cameraManager: CameraManager?
+    @Published var audioRecorderService: AudioRecorderService?
     
     // MARK: - Properties
     let recordType: RecordType
@@ -22,6 +24,7 @@ class RecordingViewModel: ObservableObject {
     private let manageTemplatesUseCase: ManageTemplatesUseCase
     private var cancellables = Set<AnyCancellable>()
     private var lastRecordedURL: URL?
+    private var isInitialized = false
     
     // MARK: - Initialization
     init(
@@ -34,26 +37,61 @@ class RecordingViewModel: ObservableObject {
         self.createRecordUseCase = createRecordUseCase
         self.mediaService = mediaService
         self.manageTemplatesUseCase = manageTemplatesUseCase
-        self.cameraManager = CameraManager()
-        self.audioRecorderService = AudioRecorderService()
         
-        setupBindings()
-        setupNotifications()
+        // 初期化をasyncで実行
+        Task {
+            await initializeServicesAsync()
+        }
+    }
+    
+    // MARK: - Async Initialization
+    @MainActor
+    private func initializeServicesAsync() async {
+        guard !isInitialized else { return }
+        
+        do {
+            print("[RecordingViewModel] Starting async initialization for \(recordType)")
+            
+            // 必要なサービスのみを初期化
+            switch recordType {
+            case .video:
+                self.cameraManager = CameraManager()
+                // カメラマネージャーの初期化完了まで少し待つ
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
+                setupCameraBindings()
+                
+            case .audio:
+                self.audioRecorderService = AudioRecorderService()
+                // オーディオレコーダーの初期化完了まで少し待つ
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
+                setupAudioBindings()
+                
+            case .image:
+                // 写真の場合はカメラのみ必要
+                self.cameraManager = CameraManager()
+                try await Task.sleep(nanoseconds: 100_000_000) // 0.1秒
+                setupCameraBindings()
+            }
+            
+            setupNotifications()
+            isInitialized = true
+            
+            print("[RecordingViewModel] Async initialization completed for \(recordType)")
+            
+        } catch {
+            print("[RecordingViewModel] Initialization error: \(error)")
+            errorMessage = "サービスの初期化に失敗しました"
+        }
     }
     
     // MARK: - Setup
-    private func setupBindings() {
+    private func setupCameraBindings() {
+        guard let cameraManager = cameraManager else { return }
+        
         // カメラマネージャーの権限状態を監視
         cameraManager.$permissionGranted
             .sink { [weak self] granted in
-                self?.showPermissionDenied = !granted && self?.recordType == .video
-            }
-            .store(in: &cancellables)
-        
-        // オーディオレコーダーの権限状態を監視
-        audioRecorderService.$permissionGranted
-            .sink { [weak self] granted in
-                if self?.recordType == .audio {
+                if self?.recordType == .video || self?.recordType == .image {
                     self?.showPermissionDenied = !granted
                 }
             }
@@ -64,6 +102,19 @@ class RecordingViewModel: ObservableObject {
             .compactMap { $0 }
             .sink { [weak self] error in
                 self?.errorMessage = error.localizedDescription
+            }
+            .store(in: &cancellables)
+    }
+    
+    private func setupAudioBindings() {
+        guard let audioRecorderService = audioRecorderService else { return }
+        
+        // オーディオレコーダーの権限状態を監視
+        audioRecorderService.$permissionGranted
+            .sink { [weak self] granted in
+                if self?.recordType == .audio {
+                    self?.showPermissionDenied = !granted
+                }
             }
             .store(in: &cancellables)
         
@@ -98,32 +149,145 @@ class RecordingViewModel: ObservableObject {
     
     // MARK: - Recording Management
     func startRecording() {
+        // 初期化が完了していない場合は待つ
+        guard isInitialized else {
+            errorMessage = "サービスの初期化中です。しばらくお待ちください"
+            return
+        }
+        
+        // エラーメッセージをクリア
+        errorMessage = nil
+        
         switch recordType {
         case .video:
-            if cameraManager.permissionGranted {
-                cameraManager.startRecording()
-            }
+            startVideoRecording()
         case .audio:
+            startAudioRecording()
+        case .image:
+            // 写真撮影実装（後で追加）
+            errorMessage = "写真撮影機能は開発中です"
+        }
+    }
+    
+    private func startVideoRecording() {
+        guard let cameraManager = cameraManager else {
+            errorMessage = "カメラサービスが初期化されていません"
+            return
+        }
+        
+        // カメラ権限を再確認
+        let cameraStatus = AVCaptureDevice.authorizationStatus(for: .video)
+        
+        switch cameraStatus {
+        case .authorized:
+            // 権限ありの場合、カメラマネージャーの状態を確認
+            if cameraManager.permissionGranted {
+                // セッションが準備できているか確認
+                if !cameraManager.isRecording {
+                    print("[DEBUG] Starting video recording...")
+                    cameraManager.startRecording()
+                } else {
+                    errorMessage = "既に録画中です"
+                }
+            } else {
+                // カメラマネージャーの初期化を待つ
+                errorMessage = "カメラの準備中です。しばらくお待ちください"
+                // 1秒後に再試行
+                Task {
+                    try await Task.sleep(nanoseconds: 1_000_000_000)
+                    if cameraManager.permissionGranted {
+                        cameraManager.startRecording()
+                    } else {
+                        await MainActor.run {
+                            self.errorMessage = "カメラが利用できません"
+                        }
+                    }
+                }
+            }
+        case .denied, .restricted:
+            errorMessage = "カメラへのアクセスが拒否されています。設定で許可してください"
+            showPermissionDenied = true
+        case .notDetermined:
+            // 権限を再要求
+            Task {
+                let granted = await AVCaptureDevice.requestAccess(for: .video)
+                await MainActor.run {
+                    if granted {
+                        cameraManager.checkPermissions()
+                        // 少し待ってから録画開始
+                        Task {
+                            try await Task.sleep(nanoseconds: 500_000_000)
+                            if cameraManager.permissionGranted {
+                                cameraManager.startRecording()
+                            }
+                        }
+                    } else {
+                        self.errorMessage = "カメラの権限が必要です"
+                        self.showPermissionDenied = true
+                    }
+                }
+            }
+        @unknown default:
+            errorMessage = "カメラの権限状態が不明です"
+        }
+    }
+    
+    private func startAudioRecording() {
+        guard let audioRecorderService = audioRecorderService else {
+            errorMessage = "オーディオサービスが初期化されていません"
+            return
+        }
+        
+        let audioStatus = AVAudioSession.sharedInstance().recordPermission
+        
+        switch audioStatus {
+        case .granted:
             if audioRecorderService.permissionGranted {
                 Task {
                     let success = await audioRecorderService.startRecording()
                     if !success {
-                        errorMessage = "録音の開始に失敗しました"
+                        await MainActor.run {
+                            self.errorMessage = "録音の開始に失敗しました"
+                        }
+                    }
+                }
+            } else {
+                errorMessage = "オーディオレコーダーの準備中です"
+            }
+        case .denied:
+            errorMessage = "マイクへのアクセスが拒否されています。設定で許可してください"
+            showPermissionDenied = true
+        case .undetermined:
+            // 権限を要求
+            Task {
+                let granted = await audioRecorderService.requestPermissionAsync()
+                await MainActor.run {
+                    if granted {
+                        Task {
+                            let success = await audioRecorderService.startRecording()
+                            if !success {
+                                await MainActor.run {
+                                    self.errorMessage = "録音の開始に失敗しました"
+                                }
+                            }
+                        }
+                    } else {
+                        self.errorMessage = "マイクの権限が必要です"
+                        self.showPermissionDenied = true
                     }
                 }
             }
-        case .image:
-            // 写真撮影実装（後で追加）
-            print("Photo capture not yet implemented")
+        @unknown default:
+            errorMessage = "マイクの権限状態が不明です"
         }
     }
     
     func stopRecording() {
         switch recordType {
         case .video:
-            cameraManager.stopRecording()
+            cameraManager?.stopRecording()
         case .audio:
-            audioRecorderService.stopRecording()
+            audioRecorderService?.stopRecording()
         case .image:
             // 写真の場合は即座に撮影
             break
@@ -138,8 +302,8 @@ class RecordingViewModel: ObservableObject {
         Task {
             do {
                 // Core Dataに保存（UseCaseが内部でサムネイル生成を行う）
-                let duration = recordType == .video ? cameraManager.recordingTime : audioRecorderService.recordingTime
-                let record = try await createRecordUseCase.execute(
+                let duration = recordType == .video ? (cameraManager?.recordingTime ?? 0) : (audioRecorderService?.recordingTime ?? 0)
+                let _ = try await createRecordUseCase.execute(
                     type: recordType,
                     fileURL: url,
                     duration: duration,
@@ -167,13 +331,27 @@ class RecordingViewModel: ObservableObject {
     
     // MARK: - Camera Lifecycle
     func startCameraSession() {
-        if recordType == .video {
+        guard isInitialized, let cameraManager = cameraManager else {
+            print("[RecordingViewModel] Camera not initialized yet, skipping session start")
+            return
+        }
+        
+        if recordType == .video || recordType == .image {
+            print("[RecordingViewModel] Starting camera session")
+            // セッション開始前に権限を再確認
+            cameraManager.checkPermissions()
             cameraManager.startSession()
         }
     }
     
     func stopCameraSession() {
-        if recordType == .video {
+        guard let cameraManager = cameraManager else { return }
+        
+        if recordType == .video || recordType == .image {
+            print("[RecordingViewModel] Stopping camera session")
+            if cameraManager.isRecording {
+                cameraManager.stopRecording()
+            }
             cameraManager.stopSession()
         }
     }
@@ -182,9 +360,9 @@ class RecordingViewModel: ObservableObject {
     var isRecording: Bool {
         switch recordType {
         case .video:
-            return cameraManager.isRecording
+            return cameraManager?.isRecording ?? false
         case .audio:
-            return audioRecorderService.isRecording
+            return audioRecorderService?.isRecording ?? false
         case .image:
             return false
         }
@@ -193,9 +371,9 @@ class RecordingViewModel: ObservableObject {
     var recordingTime: TimeInterval {
         switch recordType {
         case .video:
-            return cameraManager.recordingTime
+            return cameraManager?.recordingTime ?? 0
         case .audio:
-            return audioRecorderService.recordingTime
+            return audioRecorderService?.recordingTime ?? 0
         case .image:
             return 0
         }
@@ -205,8 +383,10 @@ class RecordingViewModel: ObservableObject {
         let isPro = KeychainService.shared.isProVersion
         switch recordType {
         case .video:
+            guard let cameraManager = cameraManager else { return isPro ? 300.0 : 5.0 }
             return isPro ? cameraManager.proVersionVideoLimit : cameraManager.freeVersionVideoLimit
         case .audio:
+            guard let audioRecorderService = audioRecorderService else { return isPro ? .infinity : 90.0 }
             return isPro ? audioRecorderService.proVersionAudioLimit : audioRecorderService.freeVersionAudioLimit
         case .image:
             return 0
@@ -222,7 +402,7 @@ class RecordingViewModel: ObservableObject {
             let milliseconds = Int((recordingTime.truncatingRemainder(dividingBy: 1)) * 10)
             return String(format: "%02d:%02d.%d", minutes, seconds, milliseconds)
         case .audio:
-            return audioRecorderService.formattedRecordingTime
+            return audioRecorderService?.formattedRecordingTime ?? "00:00.0"
         case .image:
             return "00:00.0"
         }
@@ -236,7 +416,7 @@ class RecordingViewModel: ObservableObject {
             let seconds = totalSeconds % 60
             return String(format: "%02d:%02d", minutes, seconds)
         case .audio:
-            return audioRecorderService.formattedMaxTime
+            return audioRecorderService?.formattedMaxTime ?? "00:00"
         case .image:
             return "00:00"
         }
