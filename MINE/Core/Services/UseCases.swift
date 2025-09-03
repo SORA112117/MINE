@@ -15,6 +15,7 @@ class CreateRecordUseCase {
     func execute(
         type: RecordType,
         fileURL: URL,
+        duration: TimeInterval? = nil,
         comment: String? = nil,
         tags: Set<Tag> = [],
         folderId: UUID? = nil
@@ -26,11 +27,15 @@ class CreateRecordUseCase {
         // 記録作成
         let record = Record(
             type: type,
+            createdAt: Date(),
+            updatedAt: Date(),
+            duration: duration,
             fileURL: fileURL,
             thumbnailURL: thumbnailURL,
             comment: comment,
             tags: tags,
-            folderId: folderId
+            folderId: folderId,
+            templateId: nil
         )
         
         // 保存

@@ -338,3 +338,4 @@ struct RecordingView: View {
             )
         }
     }
+}

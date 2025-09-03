@@ -103,25 +103,15 @@ class RecordingViewModel: ObservableObject {
         
         Task {
             do {
-                // サムネイル生成
-                let thumbnailURL = try await generateThumbnail(from: url)
-                
-                // Core Dataに保存
-                let record = Record(
-                    id: UUID(),
+                // Core Dataに保存（UseCaseが内部でサムネイル生成を行う）
+                let record = try await createRecordUseCase.execute(
                     type: recordType,
-                    createdAt: Date(),
-                    updatedAt: Date(),
-                    duration: cameraManager.recordingTime,
                     fileURL: url,
-                    thumbnailURL: thumbnailURL,
+                    duration: cameraManager.recordingTime,
                     comment: nil,
                     tags: [],
-                    folderId: nil,
-                    templateId: nil
+                    folderId: nil
                 )
-                
-                try await createRecordUseCase.execute(record)
                 
                 // 成功メッセージを表示
                 showSuccessMessage = true
@@ -139,48 +129,6 @@ class RecordingViewModel: ObservableObject {
         }
     }
     
-    // MARK: - Thumbnail Generation
-    private func generateThumbnail(from videoURL: URL) async throws -> URL? {
-        let asset = AVAsset(url: videoURL)
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-        imageGenerator.maximumSize = CGSize(width: 200, height: 200)
-        
-        let time = CMTime(seconds: 0, preferredTimescale: 1)
-        
-        return try await withCheckedThrowingContinuation { continuation in
-            imageGenerator.generateCGImageAsynchronously(for: time) { cgImage, _, error in
-                if let error = error {
-                    continuation.resume(throwing: error)
-                    return
-                }
-                
-                guard let cgImage = cgImage else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                
-                // CGImageをUIImageに変換して保存
-                let uiImage = UIImage(cgImage: cgImage)
-                guard let data = uiImage.jpegData(compressionQuality: 0.8) else {
-                    continuation.resume(returning: nil)
-                    return
-                }
-                
-                // サムネイルファイルを保存
-                let fileName = "thumbnail_\(Date().timeIntervalSince1970).jpg"
-                let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-                let thumbnailURL = documentsPath.appendingPathComponent(fileName)
-                
-                do {
-                    try data.write(to: thumbnailURL)
-                    continuation.resume(returning: thumbnailURL)
-                } catch {
-                    continuation.resume(throwing: error)
-                }
-            }
-        }
-    }
     
     // MARK: - Camera Lifecycle
     func startCameraSession() {
