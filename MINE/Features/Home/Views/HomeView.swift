@@ -1,8 +1,11 @@
 import SwiftUI
+import PhotosUI
 
 struct HomeView: View {
     @StateObject var viewModel: HomeViewModel
     @EnvironmentObject var appCoordinator: AppCoordinator
+    @State private var showingPhotoPicker = false
+    @State private var selectedPhotoItems: [PhotosPickerItem] = []
     
     var body: some View {
         ScrollView {
@@ -13,8 +16,8 @@ struct HomeView: View {
                 // クイック記録ボタン
                 quickRecordSection
                 
-                // 最近の記録
-                recentRecordsSection
+                // 写真ライブラリから選択
+                photoLibrarySection
                 
                 // 統計情報
                 statsSection
@@ -90,41 +93,41 @@ struct HomeView: View {
         )
     }
     
-    // MARK: - Recent Records Section
-    private var recentRecordsSection: some View {
+    // MARK: - Photo Library Section
+    private var photoLibrarySection: some View {
         VStack(alignment: .leading, spacing: Constants.UI.smallPadding) {
-            HStack {
-                Text("最近の記録")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Theme.text)
-                
-                Spacer()
-                
-                Button("すべて表示") {
-                    appCoordinator.showRecords()
-                }
-                .font(.subheadline)
-                .foregroundColor(Theme.primary)
-            }
+            Text("写真フォルダから選択")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(Theme.text)
             
-            if viewModel.recentRecords.isEmpty {
-                EmptyStateView(
-                    title: "まだ記録がありません",
-                    message: "上のボタンから記録を始めましょう",
-                    systemImage: "plus.circle"
-                )
-            } else {
-                LazyVGrid(
-                    columns: Array(repeating: GridItem(.flexible()), count: 2),
-                    spacing: Constants.UI.smallPadding
-                ) {
-                    ForEach(viewModel.recentRecords.prefix(4), id: \.id) { record in
-                        RecordThumbnailView(record: record) {
-                            appCoordinator.showRecordDetail(record)
-                        }
-                    }
+            PhotosPicker(
+                selection: $selectedPhotoItems,
+                maxSelectionCount: 10,
+                matching: .any(of: [.images, .videos])
+            ) {
+                HStack {
+                    Image(systemName: "photo.on.rectangle")
+                        .font(.title2)
+                        .foregroundColor(Theme.primary)
+                    
+                    Text("ライブラリから選択")
+                        .font(.headline)
+                        .fontWeight(.medium)
+                        .foregroundColor(Theme.text)
+                    
+                    Spacer()
+                    
+                    Image(systemName: "chevron.right")
+                        .font(.caption)
+                        .foregroundColor(Theme.gray4)
                 }
+                .padding()
+                .background(Theme.gray1)
+                .cornerRadius(Constants.UI.cornerRadius)
+            }
+            .onChange(of: selectedPhotoItems) {
+                handleSelectedPhotos(selectedPhotoItems)
             }
         }
         .padding()
@@ -141,23 +144,23 @@ struct HomeView: View {
     // MARK: - Stats Section
     private var statsSection: some View {
         VStack(alignment: .leading, spacing: Constants.UI.smallPadding) {
-            Text("今週の統計")
+            Text("全期間の統計")
                 .font(.headline)
                 .fontWeight(.semibold)
                 .foregroundColor(Theme.text)
             
             HStack(spacing: Constants.UI.smallPadding) {
                 StatCardView(
-                    title: "記録回数",
-                    value: "\(viewModel.weeklyStats.recordCount)",
+                    title: "総記録数",
+                    value: "\(viewModel.overallStats.totalRecordCount)",
                     icon: "chart.bar.fill",
                     color: Theme.primary
                 )
                 
                 StatCardView(
-                    title: "継続日数",
-                    value: "\(viewModel.weeklyStats.streakDays)",
-                    icon: "flame.fill",
+                    title: "月間記録数",
+                    value: "\(viewModel.overallStats.monthlyRecordCount)",
+                    icon: "calendar.badge.plus",
                     color: Theme.accent
                 )
             }
@@ -171,6 +174,46 @@ struct HomeView: View {
             x: 0,
             y: 2
         )
+    }
+    
+    // MARK: - Photo Handling
+    private func handleSelectedPhotos(_ items: [PhotosPickerItem]) {
+        Task {
+            for item in items {
+                do {
+                    // 写真/動画を一時的にローカルに保存して記録として追加
+                    if let data = try await item.loadTransferable(type: Data.self) {
+                        await processPhotoData(data, item: item)
+                    }
+                } catch {
+                    print("Failed to load photo: \(error)")
+                }
+            }
+            
+            // 選択をクリア
+            await MainActor.run {
+                selectedPhotoItems.removeAll()
+            }
+        }
+    }
+    
+    @MainActor
+    private func processPhotoData(_ data: Data, item: PhotosPickerItem) async {
+        do {
+            // PhotosPickerItemからメディアタイプを判定
+            let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
+            
+            print("Processing \(isVideo ? "video" : "photo") data of size: \(data.count) bytes")
+            
+            // ViewModelの記録作成メソッドを呼び出し
+            try await viewModel.createRecordFromPhotoData(data, isVideo: isVideo)
+            
+            print("Successfully created record from \(isVideo ? "video" : "photo")")
+            
+        } catch {
+            print("Failed to create record from photo: \(error)")
+            // エラーハンドリング - 実際のアプリではユーザーにエラーメッセージを表示
+        }
     }
     
     // MARK: - Computed Properties

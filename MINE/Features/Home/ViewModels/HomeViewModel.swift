@@ -1,16 +1,16 @@
 import Foundation
 import Combine
 
-// MARK: - Weekly Stats
-struct WeeklyStats {
-    let recordCount: Int
-    let streakDays: Int
+// MARK: - Overall Stats
+struct OverallStats {
+    let totalRecordCount: Int
+    let monthlyRecordCount: Int
     let totalDuration: TimeInterval
     let mostUsedType: RecordType?
     
-    static let empty = WeeklyStats(
-        recordCount: 0,
-        streakDays: 0,
+    static let empty = OverallStats(
+        totalRecordCount: 0,
+        monthlyRecordCount: 0,
         totalDuration: 0,
         mostUsedType: nil
     )
@@ -19,8 +19,7 @@ struct WeeklyStats {
 // MARK: - Home ViewModel
 @MainActor
 class HomeViewModel: ObservableObject {
-    @Published var recentRecords: [Record] = []
-    @Published var weeklyStats: WeeklyStats = .empty
+    @Published var overallStats: OverallStats = .empty
     @Published var isLoading = false
     @Published var error: Error?
     
@@ -43,8 +42,7 @@ class HomeViewModel: ObservableObject {
     func loadData() {
         Task {
             do {
-                try await loadRecentRecords()
-                try await loadWeeklyStats()
+                try await loadOverallStats()
             } catch {
                 handleError(error)
             }
@@ -57,8 +55,7 @@ class HomeViewModel: ObservableObject {
         error = nil
         
         do {
-            try await loadRecentRecords()
-            try await loadWeeklyStats()
+            try await loadOverallStats()
         } catch {
             self.error = error
         }
@@ -72,97 +69,92 @@ class HomeViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Record Creation from Photos
+    func createRecordFromPhotoData(_ data: Data, isVideo: Bool) async throws {
+        // 一時ファイルを作成
+        let tempDirectory = FileManager.default.temporaryDirectory
+        let fileName = "imported_\(Date().timeIntervalSince1970).\(isVideo ? "mp4" : "jpg")"
+        let tempURL = tempDirectory.appendingPathComponent(fileName)
+        
+        // データを一時ファイルに書き込み
+        try data.write(to: tempURL)
+        
+        // 記録タイプを決定
+        let recordType: RecordType = isVideo ? .video : .image
+        
+        // CreateRecordUseCaseを使用して記録を作成
+        let _ = try await createRecordUseCase.execute(
+            type: recordType,
+            fileURL: tempURL,
+            duration: nil, // 写真の場合はnull
+            comment: "ライブラリから追加",
+            tags: [],
+            folderId: nil
+        )
+        
+        // 統計を再読み込み
+        await loadDataAsync()
+    }
+    
     // MARK: - Private Methods
     
     private func setupBindings() {
         // 必要に応じて追加のバインディング
     }
     
-    private func loadRecentRecords() async throws {
-        let records = try await getRecordsUseCase.execute(
+    private func loadOverallStats() async throws {
+        let calendar = Calendar.current
+        let now = Date()
+        
+        // 全期間の記録を取得
+        let allRecords = try await getRecordsUseCase.execute(
             filter: RecordFilter(
-                limit: 10,
                 sortBy: .createdAt,
                 sortOrder: .descending
             )
         )
         
-        await MainActor.run {
-            self.recentRecords = records
-        }
-    }
-    
-    private func loadWeeklyStats() async throws {
-        let calendar = Calendar.current
-        let now = Date()
-        
-        // 今週の開始日を取得
-        guard let weekStart = calendar.dateInterval(of: .weekOfYear, for: now)?.start else {
+        // 今月の開始日を取得
+        guard let monthStart = calendar.dateInterval(of: .month, for: now)?.start else {
             return
         }
         
-        let weekEnd = calendar.date(byAdding: .day, value: 7, to: weekStart) ?? now
+        let monthEnd = calendar.date(byAdding: .month, value: 1, to: monthStart) ?? now
         
-        let weeklyRecords = try await getRecordsUseCase.execute(
+        // 今月の記録を取得
+        let monthlyRecords = try await getRecordsUseCase.execute(
             filter: RecordFilter(
-                dateRange: weekStart...weekEnd,
+                dateRange: monthStart...monthEnd,
                 sortBy: .createdAt,
                 sortOrder: .ascending
             )
         )
         
-        let stats = calculateWeeklyStats(from: weeklyRecords, startDate: weekStart)
+        let stats = calculateOverallStats(from: allRecords, monthlyRecords: monthlyRecords)
         
         await MainActor.run {
-            self.weeklyStats = stats
+            self.overallStats = stats
         }
     }
     
-    private func calculateWeeklyStats(from records: [Record], startDate: Date) -> WeeklyStats {
-        let recordCount = records.count
-        
-        // 継続日数の計算
-        let streakDays = calculateStreakDays(from: records, startDate: startDate)
+    private func calculateOverallStats(from allRecords: [Record], monthlyRecords: [Record]) -> OverallStats {
+        let totalRecordCount = allRecords.count
+        let monthlyRecordCount = monthlyRecords.count
         
         // 総時間の計算
-        let totalDuration = records.compactMap { $0.duration }.reduce(0, +)
+        let totalDuration = allRecords.compactMap { $0.duration }.reduce(0, +)
         
         // 最も使用されたタイプ
-        let typeCounts = Dictionary(grouping: records, by: { $0.type })
+        let typeCounts = Dictionary(grouping: allRecords, by: { $0.type })
             .mapValues { $0.count }
         let mostUsedType = typeCounts.max(by: { $0.value < $1.value })?.key
         
-        return WeeklyStats(
-            recordCount: recordCount,
-            streakDays: streakDays,
+        return OverallStats(
+            totalRecordCount: totalRecordCount,
+            monthlyRecordCount: monthlyRecordCount,
             totalDuration: totalDuration,
             mostUsedType: mostUsedType
         )
-    }
-    
-    private func calculateStreakDays(from records: [Record], startDate: Date) -> Int {
-        let calendar = Calendar.current
-        let today = Date()
-        
-        // 日付ごとに記録をグループ化
-        let recordsByDate = Dictionary(grouping: records) { record in
-            calendar.startOfDay(for: record.createdAt)
-        }
-        
-        var streakDays = 0
-        var currentDate = calendar.startOfDay(for: today)
-        
-        // 今日から遡って連続日数をカウント
-        while currentDate >= startDate {
-            if recordsByDate[currentDate] != nil {
-                streakDays += 1
-                currentDate = calendar.date(byAdding: .day, value: -1, to: currentDate) ?? startDate
-            } else {
-                break
-            }
-        }
-        
-        return streakDays
     }
     
     // MARK: - Error Handling
