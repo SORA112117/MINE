@@ -49,7 +49,10 @@ class CameraManager: NSObject, ObservableObject {
     // MARK: - Initialization
     override init() {
         super.init()
-        checkPermissions()
+        // 初期化後に非同期で権限チェック
+        Task { @MainActor in
+            await checkPermissionsAsync()
+        }
     }
     
     // MARK: - Permission Management
@@ -60,6 +63,19 @@ class CameraManager: NSObject, ObservableObject {
             setupSession()
         case .notDetermined:
             requestPermission()
+        default:
+            permissionGranted = false
+            error = .permissionDenied
+        }
+    }
+    
+    private func checkPermissionsAsync() async {
+        switch AVCaptureDevice.authorizationStatus(for: .video) {
+        case .authorized:
+            permissionGranted = true
+            setupSession()
+        case .notDetermined:
+            await requestPermissionAsync()
         default:
             permissionGranted = false
             error = .permissionDenied
@@ -79,6 +95,16 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
+    private func requestPermissionAsync() async {
+        let granted = await AVCaptureDevice.requestAccess(for: .video)
+        permissionGranted = granted
+        if granted {
+            setupSession()
+        } else {
+            error = .permissionDenied
+        }
+    }
+    
     // MARK: - Session Configuration
     private func setupSession() {
         sessionQueue.async { [weak self] in
@@ -87,12 +113,17 @@ class CameraManager: NSObject, ObservableObject {
     }
     
     private func configureSession() {
+        guard !session.isRunning else { return }
+        
         session.beginConfiguration()
         session.sessionPreset = .high
         
+        // 既存の入力・出力をクリア
+        session.inputs.forEach { session.removeInput($0) }
+        session.outputs.forEach { session.removeOutput($0) }
+        
         // Video Input
-        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back),
-              let videoInput = try? AVCaptureDeviceInput(device: videoDevice) else {
+        guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
             Task { @MainActor in
                 self.error = .deviceNotAvailable
             }
@@ -100,15 +131,29 @@ class CameraManager: NSObject, ObservableObject {
             return
         }
         
-        if session.canAddInput(videoInput) {
-            session.addInput(videoInput)
+        do {
+            let videoInput = try AVCaptureDeviceInput(device: videoDevice)
+            if session.canAddInput(videoInput) {
+                session.addInput(videoInput)
+            }
+        } catch {
+            Task { @MainActor in
+                self.error = .sessionConfigurationFailed
+            }
+            session.commitConfiguration()
+            return
         }
         
         // Audio Input
-        if let audioDevice = AVCaptureDevice.default(for: .audio),
-           let audioInput = try? AVCaptureDeviceInput(device: audioDevice) {
-            if session.canAddInput(audioInput) {
-                session.addInput(audioInput)
+        if let audioDevice = AVCaptureDevice.default(for: .audio) {
+            do {
+                let audioInput = try AVCaptureDeviceInput(device: audioDevice)
+                if session.canAddInput(audioInput) {
+                    session.addInput(audioInput)
+                }
+            } catch {
+                print("Failed to add audio input: \(error)")
+                // オーディオは必須ではないため、続行
             }
         }
         
@@ -119,7 +164,8 @@ class CameraManager: NSObject, ObservableObject {
             self.videoOutput = movieOutput
             
             // 最大録画時間を設定
-            movieOutput.maxRecordedDuration = CMTime(seconds: maxRecordingDuration, preferredTimescale: 600)
+            let maxDuration = CMTime(seconds: maxRecordingDuration, preferredTimescale: 600)
+            movieOutput.maxRecordedDuration = maxDuration
         }
         
         session.commitConfiguration()

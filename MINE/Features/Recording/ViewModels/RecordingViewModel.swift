@@ -12,7 +12,7 @@ class RecordingViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var recordingCompleted = false
-    @Published var cameraManager = CameraManager()
+    @Published var cameraManager: CameraManager
     
     // MARK: - Properties
     let recordType: RecordType
@@ -33,6 +33,7 @@ class RecordingViewModel: ObservableObject {
         self.createRecordUseCase = createRecordUseCase
         self.mediaService = mediaService
         self.manageTemplatesUseCase = manageTemplatesUseCase
+        self.cameraManager = CameraManager()
         
         setupBindings()
         setupNotifications()

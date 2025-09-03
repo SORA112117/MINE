@@ -1,0 +1,14 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>NSCameraUsageDescription</key>
+	<string>MINEはあなたの成長を記録するためにカメラを使用します</string>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>MINEは動画記録時の音声を録音するためにマイクを使用します</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>MINEは記録した動画や画像を保存・読み込むためにフォトライブラリを使用します</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>MINEは記録した動画や画像を保存するためにフォトライブラリへの書き込み権限が必要です</string>
+</dict>
+</plist>
