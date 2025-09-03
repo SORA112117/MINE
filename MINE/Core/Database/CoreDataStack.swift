@@ -107,7 +107,7 @@ class CoreDataStack {
     }
     
     func isStorageLimitReached() -> Bool {
-        let isProVersion = UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.isProVersion)
+        let isProVersion = KeychainService.shared.isProVersion
         
         if isProVersion {
             return false // 有料版は無制限

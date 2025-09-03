@@ -397,6 +397,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "MINEはあなたの成長を記録するためにカメラを使用します。ビデオ録画機能で動画を撮影し、進捗状況を視覚的に記録できます。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MINEは動画記録時の音声を録音するためにマイクを使用します。録音した音声はデバイス内にのみ保存され、外部に送信されません。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "MINEは記録した動画や画像を保存するためにフォトライブラリへの書き込み権限が必要です。撮影したコンテンツはお客様の同意のもとフォトライブラリに保存されます。";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "MINEは記録した動画や画像を保存・読み込むためにフォトライブラリを使用します。個人の成長記録として管理するために必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
@@ -424,6 +428,10 @@
 				CURRENT_PROJECT_VERSION = 1;
 				ENABLE_PREVIEWS = YES;
 				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_NSCameraUsageDescription = "MINEはあなたの成長を記録するためにカメラを使用します。ビデオ録画機能で動画を撮影し、進捗状況を視覚的に記録できます。";
+				INFOPLIST_KEY_NSMicrophoneUsageDescription = "MINEは動画記録時の音声を録音するためにマイクを使用します。録音した音声はデバイス内にのみ保存され、外部に送信されません。";
+				INFOPLIST_KEY_NSPhotoLibraryAddUsageDescription = "MINEは記録した動画や画像を保存するためにフォトライブラリへの書き込み権限が必要です。撮影したコンテンツはお客様の同意のもとフォトライブラリに保存されます。";
+				INFOPLIST_KEY_NSPhotoLibraryUsageDescription = "MINEは記録した動画や画像を保存・読み込むためにフォトライブラリを使用します。個人の成長記録として管理するために必要です。";
 				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
 				INFOPLIST_KEY_UIApplicationSupportsIndirectInputEvents = YES;
 				INFOPLIST_KEY_UILaunchScreen_Generation = YES;

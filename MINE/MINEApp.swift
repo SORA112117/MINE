@@ -53,11 +53,19 @@ struct MINEApp: App {
     }
     
     private func setupInitialData() {
+        // Keychainサービスの初期化とUserDefaultsからの移行
+        KeychainService.shared.migrateFromUserDefaults()
+        
         // 初回起動時の設定
         if !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding) {
             // デフォルトフォルダとタグを作成
             createDefaultData()
             UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
+        }
+        
+        // サブスクリプション状態の検証（バックグラウンドで実行）
+        Task.detached {
+            await KeychainService.shared.validateSubscription()
         }
     }
     

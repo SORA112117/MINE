@@ -13,6 +13,7 @@ class RecordingViewModel: ObservableObject {
     @Published var showSuccessMessage = false
     @Published var recordingCompleted = false
     @Published var cameraManager: CameraManager
+    @Published var audioRecorderService: AudioRecorderService
     
     // MARK: - Properties
     let recordType: RecordType
@@ -34,6 +35,7 @@ class RecordingViewModel: ObservableObject {
         self.mediaService = mediaService
         self.manageTemplatesUseCase = manageTemplatesUseCase
         self.cameraManager = CameraManager()
+        self.audioRecorderService = AudioRecorderService()
         
         setupBindings()
         setupNotifications()
@@ -48,8 +50,25 @@ class RecordingViewModel: ObservableObject {
             }
             .store(in: &cancellables)
         
-        // エラー監視
+        // オーディオレコーダーの権限状態を監視
+        audioRecorderService.$permissionGranted
+            .sink { [weak self] granted in
+                if self?.recordType == .audio {
+                    self?.showPermissionDenied = !granted
+                }
+            }
+            .store(in: &cancellables)
+        
+        // エラー監視（カメラ）
         cameraManager.$error
+            .compactMap { $0 }
+            .sink { [weak self] error in
+                self?.errorMessage = error.localizedDescription
+            }
+            .store(in: &cancellables)
+        
+        // エラー監視（オーディオ）
+        audioRecorderService.$error
             .compactMap { $0 }
             .sink { [weak self] error in
                 self?.errorMessage = error.localizedDescription
@@ -66,6 +85,15 @@ class RecordingViewModel: ObservableObject {
                 self?.handleRecordingCompleted(url: url)
             }
             .store(in: &cancellables)
+        
+        // 録音完了通知を監視
+        NotificationCenter.default.publisher(for: .audioRecordingCompleted)
+            .compactMap { $0.userInfo?["url"] as? URL }
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] url in
+                self?.handleRecordingCompleted(url: url)
+            }
+            .store(in: &cancellables)
     }
     
     // MARK: - Recording Management
@@ -76,8 +104,14 @@ class RecordingViewModel: ObservableObject {
                 cameraManager.startRecording()
             }
         case .audio:
-            // オーディオ録音実装（後で追加）
-            print("Audio recording not yet implemented")
+            if audioRecorderService.permissionGranted {
+                Task {
+                    let success = await audioRecorderService.startRecording()
+                    if !success {
+                        errorMessage = "録音の開始に失敗しました"
+                    }
+                }
+            }
         case .image:
             // 写真撮影実装（後で追加）
             print("Photo capture not yet implemented")
@@ -89,8 +123,7 @@ class RecordingViewModel: ObservableObject {
         case .video:
             cameraManager.stopRecording()
         case .audio:
-            // オーディオ録音停止実装
-            break
+            audioRecorderService.stopRecording()
         case .image:
             // 写真の場合は即座に撮影
             break
@@ -105,10 +138,11 @@ class RecordingViewModel: ObservableObject {
         Task {
             do {
                 // Core Dataに保存（UseCaseが内部でサムネイル生成を行う）
+                let duration = recordType == .video ? cameraManager.recordingTime : audioRecorderService.recordingTime
                 let record = try await createRecordUseCase.execute(
                     type: recordType,
                     fileURL: url,
-                    duration: cameraManager.recordingTime,
+                    duration: duration,
                     comment: nil,
                     tags: [],
                     folderId: nil
@@ -146,31 +180,66 @@ class RecordingViewModel: ObservableObject {
     
     // MARK: - Computed Properties
     var isRecording: Bool {
-        cameraManager.isRecording
+        switch recordType {
+        case .video:
+            return cameraManager.isRecording
+        case .audio:
+            return audioRecorderService.isRecording
+        case .image:
+            return false
+        }
     }
     
     var recordingTime: TimeInterval {
-        cameraManager.recordingTime
+        switch recordType {
+        case .video:
+            return cameraManager.recordingTime
+        case .audio:
+            return audioRecorderService.recordingTime
+        case .image:
+            return 0
+        }
     }
     
     var maxRecordingTime: TimeInterval {
-        let isPro = UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.isProVersion)
-        return isPro ? cameraManager.proVersionVideoLimit : cameraManager.freeVersionVideoLimit
+        let isPro = KeychainService.shared.isProVersion
+        switch recordType {
+        case .video:
+            return isPro ? cameraManager.proVersionVideoLimit : cameraManager.freeVersionVideoLimit
+        case .audio:
+            return isPro ? audioRecorderService.proVersionAudioLimit : audioRecorderService.freeVersionAudioLimit
+        case .image:
+            return 0
+        }
     }
     
     var formattedRecordingTime: String {
-        let totalSeconds = Int(recordingTime)
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        let milliseconds = Int((recordingTime.truncatingRemainder(dividingBy: 1)) * 10)
-        return String(format: "%02d:%02d.%d", minutes, seconds, milliseconds)
+        switch recordType {
+        case .video:
+            let totalSeconds = Int(recordingTime)
+            let minutes = totalSeconds / 60
+            let seconds = totalSeconds % 60
+            let milliseconds = Int((recordingTime.truncatingRemainder(dividingBy: 1)) * 10)
+            return String(format: "%02d:%02d.%d", minutes, seconds, milliseconds)
+        case .audio:
+            return audioRecorderService.formattedRecordingTime
+        case .image:
+            return "00:00.0"
+        }
     }
     
     var formattedMaxTime: String {
-        let totalSeconds = Int(maxRecordingTime)
-        let minutes = totalSeconds / 60
-        let seconds = totalSeconds % 60
-        return String(format: "%02d:%02d", minutes, seconds)
+        switch recordType {
+        case .video:
+            let totalSeconds = Int(maxRecordingTime)
+            let minutes = totalSeconds / 60
+            let seconds = totalSeconds % 60
+            return String(format: "%02d:%02d", minutes, seconds)
+        case .audio:
+            return audioRecorderService.formattedMaxTime
+        case .image:
+            return "00:00"
+        }
     }
     
     // MARK: - Cleanup

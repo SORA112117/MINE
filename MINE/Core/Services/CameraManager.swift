@@ -22,7 +22,7 @@ class CameraManager: NSObject, ObservableObject {
     private var currentVideoURL: URL?
     private var recordingTimer: Timer?
     private var maxRecordingDuration: TimeInterval {
-        UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.isProVersion) ? proVersionVideoLimit : freeVersionVideoLimit
+        KeychainService.shared.isProVersion ? proVersionVideoLimit : freeVersionVideoLimit
     }
     
     // MARK: - Camera Error Types
