@@ -83,6 +83,16 @@ class DIContainer: ObservableObject {
         ManageTemplatesUseCase(templateRepository: templateRepository)
     }()
     
+    // MARK: - ViewModels
+    lazy var recordsViewModel: RecordsViewModel = {
+        RecordsViewModel(
+            getRecordsUseCase: getRecordsUseCase,
+            deleteRecordUseCase: deleteRecordUseCase,
+            manageFoldersUseCase: manageFoldersUseCase,
+            manageTagsUseCase: manageTagsUseCase
+        )
+    }()
+    
     // MARK: - ViewModels Factory
     @MainActor
     func makeHomeViewModel() -> HomeViewModel {
@@ -94,12 +104,7 @@ class DIContainer: ObservableObject {
     
     @MainActor
     func makeRecordsViewModel() -> RecordsViewModel {
-        RecordsViewModel(
-            getRecordsUseCase: getRecordsUseCase,
-            deleteRecordUseCase: deleteRecordUseCase,
-            manageFoldersUseCase: manageFoldersUseCase,
-            manageTagsUseCase: manageTagsUseCase
-        )
+        return recordsViewModel
     }
     
     @MainActor

@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct RecordsView: View {
-    @StateObject var viewModel: RecordsViewModel
+    @ObservedObject var viewModel: RecordsViewModel
     @EnvironmentObject var appCoordinator: AppCoordinator
     @State private var showingSearchFilters = false
     @State private var showingDeleteConfirmation = false

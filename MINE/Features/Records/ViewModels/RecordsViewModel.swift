@@ -46,6 +46,10 @@ class RecordsViewModel: ObservableObject {
     private let manageTagsUseCase: ManageTagsUseCase
     private var cancellables = Set<AnyCancellable>()
     
+    // MARK: - Concurrency Control
+    private var loadTask: Task<Void, Never>?
+    private var hasInitialized = false
+    
     init(
         getRecordsUseCase: GetRecordsUseCase,
         deleteRecordUseCase: DeleteRecordUseCase,
@@ -60,16 +64,30 @@ class RecordsViewModel: ObservableObject {
         setupBindings()
     }
     
+    deinit {
+        loadTask?.cancel()
+        cancellables.removeAll()
+    }
+    
     // MARK: - Public Methods
     
     func loadData() {
-        Task {
+        // 初回のみ自動ロードを実行
+        guard !hasInitialized else { return }
+        hasInitialized = true
+        
+        // 既存の処理をキャンセルして新しい処理を開始
+        loadTask?.cancel()
+        loadTask = Task {
             await loadDataAsync()
         }
     }
     
     @MainActor
     func loadDataAsync() async {
+        // 既にロード中の場合は重複実行を防ぐ
+        guard !isLoading else { return }
+        
         isLoading = true
         error = nil
         
@@ -78,14 +96,27 @@ class RecordsViewModel: ObservableObject {
             try await loadFolders()
             try await loadTags()
         } catch {
-            self.error = error
+            // Task がキャンセルされた場合はエラーを設定しない
+            if !Task.isCancelled {
+                self.error = error
+            }
         }
         
         isLoading = false
     }
     
     func refreshData() {
-        Task {
+        // 手動リフレッシュは初期化フラグに関係なく実行
+        loadTask?.cancel()
+        loadTask = Task {
+            await loadDataAsync()
+        }
+    }
+    
+    func forceLoadData() {
+        // 強制的にデータを再読み込み（初期化フラグを無視）
+        loadTask?.cancel()
+        loadTask = Task {
             await loadDataAsync()
         }
     }
