@@ -3,7 +3,7 @@ import CoreData
 import SwiftUI
 
 // MARK: - Folder Model
-struct Folder: Identifiable, Codable {
+struct Folder: Identifiable, Codable, Hashable {
     let id: UUID
     let name: String
     let parentFolderId: UUID?

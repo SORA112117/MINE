@@ -148,7 +148,7 @@ class AudioRecorderService: NSObject, ObservableObject {
         }
     }
     
-    private func requestPermissionAsync() async {
+    func requestPermissionAsync() async -> Bool {
         let granted = await withCheckedContinuation { continuation in
             if #available(iOS 17.0, *) {
                 AVAudioApplication.requestRecordPermission { granted in
@@ -167,6 +167,8 @@ class AudioRecorderService: NSObject, ObservableObject {
         } else {
             error = .permissionDenied
         }
+        
+        return granted
     }
     
     // MARK: - Audio Session Configuration
@@ -324,6 +326,28 @@ class AudioRecorderService: NSObject, ObservableObject {
     var recordingProgress: Double {
         guard maxRecordingDuration != .infinity else { return 0.0 }
         return min(recordingTime / maxRecordingDuration, 1.0)
+    }
+    
+    // MARK: - Memory Management & Cleanup
+    deinit {
+        // レコーダーを安全に停止
+        audioRecorder?.stop()
+        audioRecorder = nil
+        
+        // タイマーを確実に停止（同期的に）
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        levelTimer?.invalidate()
+        levelTimer = nil
+        
+        // オーディオセッションをバックグラウンドでクリーンアップ
+        DispatchQueue.global(qos: .background).async { [audioSession] in
+            do {
+                try audioSession.setActive(false, options: .notifyOthersOnDeactivation)
+            } catch {
+                print("Failed to deactivate audio session in deinit: \(error)")
+            }
+        }
     }
 }
 

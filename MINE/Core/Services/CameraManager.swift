@@ -107,12 +107,12 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Session Configuration
     private func setupSession() {
-        sessionQueue.async { [weak self] in
-            self?.configureSession()
+        Task { [weak self] in
+            await self?.configureSession()
         }
     }
     
-    private func configureSession() {
+    private func configureSession() async {
         guard !session.isRunning else { return }
         
         session.beginConfiguration()
@@ -124,7 +124,7 @@ class CameraManager: NSObject, ObservableObject {
         
         // Video Input
         guard let videoDevice = AVCaptureDevice.default(.builtInWideAngleCamera, for: .video, position: .back) else {
-            Task { @MainActor in
+            await MainActor.run {
                 self.error = .deviceNotAvailable
             }
             session.commitConfiguration()
@@ -137,7 +137,7 @@ class CameraManager: NSObject, ObservableObject {
                 session.addInput(videoInput)
             }
         } catch {
-            Task { @MainActor in
+            await MainActor.run {
                 self.error = .sessionConfigurationFailed
             }
             session.commitConfiguration()
@@ -174,31 +174,92 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Session Control
     func startSession() {
-        sessionQueue.async { [weak self] in
-            if !(self?.session.isRunning ?? false) {
-                self?.session.startRunning()
+        Task {
+            await MainActor.run {
+                if !session.isRunning {
+                    sessionQueue.async { [weak session] in
+                        session?.startRunning()
+                    }
+                }
             }
         }
     }
     
     func stopSession() {
-        sessionQueue.async { [weak self] in
-            if self?.session.isRunning ?? false {
-                self?.session.stopRunning()
+        Task {
+            await MainActor.run {
+                if session.isRunning {
+                    sessionQueue.async { [weak session] in
+                        session?.stopRunning()
+                    }
+                }
             }
         }
     }
     
     // MARK: - Recording Control
     func startRecording() {
-        guard !isRecording, let output = videoOutput else { return }
+        print("[CameraManager] startRecording called - isRecording: \(isRecording), permissionGranted: \(permissionGranted)")
+        
+        // 基本的な状態チェック
+        guard !isRecording else {
+            print("[CameraManager] Already recording")
+            error = .recordingFailed("既に録画中です")
+            return
+        }
+        
+        guard permissionGranted else {
+            print("[CameraManager] Permission not granted")
+            error = .permissionDenied
+            return
+        }
+        
+        guard session.isRunning else {
+            print("[CameraManager] Session not running")
+            error = .sessionConfigurationFailed
+            return
+        }
+        
+        guard let output = videoOutput else {
+            print("[CameraManager] VideoOutput is nil")
+            error = .recordingFailed("録画出力が初期化されていません")
+            return
+        }
+        
+        // 出力が録画可能か確認
+        guard !output.isRecording else {
+            print("[CameraManager] Output already recording")
+            error = .recordingFailed("録画出力が使用中です")
+            return
+        }
         
         // 録画ファイルのURL生成
         let fileName = "MINE_\(Date().timeIntervalSince1970).mp4"
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        currentVideoURL = documentsPath.appendingPathComponent(fileName)
+        let recordsDirectory = Constants.Storage.recordsDirectory
         
-        guard let url = currentVideoURL else { return }
+        // ディレクトリが存在しない場合は作成
+        do {
+            try FileManager.default.createDirectory(at: recordsDirectory, withIntermediateDirectories: true)
+        } catch {
+            print("[CameraManager] Failed to create records directory: \(error)")
+            self.error = .recordingFailed("保存ディレクトリの作成に失敗しました")
+            return
+        }
+        
+        currentVideoURL = recordsDirectory.appendingPathComponent(fileName)
+        
+        guard let url = currentVideoURL else {
+            print("[CameraManager] Failed to create file URL")
+            error = .recordingFailed("ファイルURLの生成に失敗しました")
+            return
+        }
+        
+        print("[CameraManager] Starting recording to: \(url.path)")
+        
+        // 既存ファイルがある場合は削除
+        if FileManager.default.fileExists(atPath: url.path) {
+            try? FileManager.default.removeItem(at: url)
+        }
         
         // 録画開始
         output.startRecording(to: url, recordingDelegate: self)
@@ -207,6 +268,8 @@ class CameraManager: NSObject, ObservableObject {
         
         // タイマー開始
         startRecordingTimer()
+        
+        print("[CameraManager] Recording started successfully")
     }
     
     func stopRecording() {
@@ -243,6 +306,23 @@ class CameraManager: NSObject, ObservableObject {
         let layer = AVCaptureVideoPreviewLayer(session: session)
         layer.videoGravity = .resizeAspectFill
         return layer
+    }
+    
+    // MARK: - Memory Management
+    deinit {
+        // タイマーのクリーンアップ（同期）
+        recordingTimer?.invalidate()
+        recordingTimer = nil
+        
+        // セッションをバックグラウンドで安全にクリーンアップ
+        sessionQueue.async { [weak session] in
+            guard let session = session else { return }
+            if session.isRunning {
+                session.stopRunning()
+            }
+            session.inputs.forEach { session.removeInput($0) }
+            session.outputs.forEach { session.removeOutput($0) }
+        }
     }
 }
 
