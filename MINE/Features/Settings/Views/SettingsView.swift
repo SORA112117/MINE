@@ -113,51 +113,57 @@ struct SettingsView: View {
                 
                 // ヘルプセクション
                 Section("ヘルプ") {
-                    Link(destination: URL(string: "https://example.com/support")!) {
-                        HStack {
-                            Image(systemName: "questionmark.circle")
-                                .foregroundColor(Theme.primary)
-                            
-                            Text("サポート")
-                                .foregroundColor(Theme.text)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption)
-                                .foregroundColor(Theme.gray4)
+                    if let supportURL = URL(string: "https://example.com/support") {
+                        Link(destination: supportURL) {
+                            HStack {
+                                Image(systemName: "questionmark.circle")
+                                    .foregroundColor(Theme.primary)
+                                
+                                Text("サポート")
+                                    .foregroundColor(Theme.text)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.gray4)
+                            }
                         }
                     }
                     
-                    Link(destination: URL(string: "https://example.com/privacy")!) {
-                        HStack {
-                            Image(systemName: "hand.raised")
-                                .foregroundColor(Theme.primary)
-                            
-                            Text("プライバシーポリシー")
-                                .foregroundColor(Theme.text)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption)
-                                .foregroundColor(Theme.gray4)
+                    if let privacyURL = URL(string: "https://example.com/privacy") {
+                        Link(destination: privacyURL) {
+                            HStack {
+                                Image(systemName: "hand.raised")
+                                    .foregroundColor(Theme.primary)
+                                
+                                Text("プライバシーポリシー")
+                                    .foregroundColor(Theme.text)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.gray4)
+                            }
                         }
                     }
                     
-                    Link(destination: URL(string: "https://example.com/terms")!) {
-                        HStack {
-                            Image(systemName: "doc.text")
-                                .foregroundColor(Theme.primary)
-                            
-                            Text("利用規約")
-                                .foregroundColor(Theme.text)
-                            
-                            Spacer()
-                            
-                            Image(systemName: "arrow.up.right")
-                                .font(.caption)
-                                .foregroundColor(Theme.gray4)
+                    if let termsURL = URL(string: "https://example.com/terms") {
+                        Link(destination: termsURL) {
+                            HStack {
+                                Image(systemName: "doc.text")
+                                    .foregroundColor(Theme.primary)
+                                
+                                Text("利用規約")
+                                    .foregroundColor(Theme.text)
+                                
+                                Spacer()
+                                
+                                Image(systemName: "arrow.up.right")
+                                    .font(.caption)
+                                    .foregroundColor(Theme.gray4)
+                            }
                         }
                     }
                 }

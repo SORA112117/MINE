@@ -83,15 +83,21 @@ class CoreDataStack {
         var totalSize: Int64 = 0
         
         let fileManager = FileManager.default
-        let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first!
+        guard let documentsURL = fileManager.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            print("Error: Could not access documents directory")
+            return 0
+        }
         
         do {
             let resourceKeys: [URLResourceKey] = [.isRegularFileKey, .fileSizeKey]
-            let enumerator = fileManager.enumerator(
+            guard let enumerator = fileManager.enumerator(
                 at: documentsURL,
                 includingPropertiesForKeys: resourceKeys,
                 options: [.skipsHiddenFiles, .skipsPackageDescendants]
-            )!
+            ) else {
+                print("Error: Could not create file enumerator")
+                return totalSize
+            }
             
             for case let fileURL as URL in enumerator {
                 let resourceValues = try fileURL.resourceValues(forKeys: Set(resourceKeys))
