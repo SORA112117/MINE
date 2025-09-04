@@ -13,15 +13,26 @@ struct Constants {
     
     // MARK: - Storage
     struct Storage {
-        static var documentsDirectory: URL {
+        static let documentsDirectory: URL = {
             guard let url = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
-                fatalError("Could not access documents directory. This is a critical error.")
+                // documentsDirectoryは必ず存在するため、万が一失敗したらクラッシュさせる
+                // これは開発時のミスを早期に発見するため
+                fatalError("Could not access documents directory. This should never happen.")
             }
             return url
-        }
-        static let recordsDirectory = documentsDirectory.appendingPathComponent("Records")
-        static let thumbnailsDirectory = documentsDirectory.appendingPathComponent("Thumbnails")
-        static let templatesDirectory = documentsDirectory.appendingPathComponent("Templates")
+        }()
+        
+        static let recordsDirectory: URL = {
+            return documentsDirectory.appendingPathComponent("Records")
+        }()
+        
+        static let thumbnailsDirectory: URL = {
+            return documentsDirectory.appendingPathComponent("Thumbnails")
+        }()
+        
+        static let templatesDirectory: URL = {
+            return documentsDirectory.appendingPathComponent("Templates")
+        }()
         
         // 無料版のストレージ制限（デバイス容量の10%）
         static func freeVersionStorageLimit() -> Int64 {

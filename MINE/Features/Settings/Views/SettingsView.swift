@@ -97,7 +97,7 @@ struct SettingsView: View {
                                 Text("ストレージ")
                                     .foregroundColor(Theme.text)
                                 
-                                Text(viewModel.storageUsageText)
+                                Text(viewModel.storageStatusText)
                                     .font(.caption)
                                     .foregroundColor(Theme.gray5)
                             }
@@ -171,47 +171,7 @@ struct SettingsView: View {
         .navigationTitle("設定")
         .navigationBarTitleDisplayMode(.large)
         .onAppear {
-            viewModel.loadSettings()
+            viewModel.refreshData()
         }
-    }
-}
-
-// Placeholder ViewModel
-@MainActor
-class SettingsViewModel: ObservableObject {
-    @Published var isProVersion = false
-    @Published var storageUsageText = "計算中..."
-    
-    private let subscriptionService: SubscriptionService
-    private let cloudSyncService: CloudSyncService
-    private let coreDataStack: CoreDataStack
-    
-    init(
-        subscriptionService: SubscriptionService,
-        cloudSyncService: CloudSyncService,
-        coreDataStack: CoreDataStack
-    ) {
-        self.subscriptionService = subscriptionService
-        self.cloudSyncService = cloudSyncService
-        self.coreDataStack = coreDataStack
-    }
-    
-    func loadSettings() {
-        isProVersion = UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.isProVersion)
-        
-        // ストレージ使用量を計算
-        Task {
-            let usage = await calculateStorageUsage()
-            await MainActor.run {
-                self.storageUsageText = usage
-            }
-        }
-    }
-    
-    private func calculateStorageUsage() async -> String {
-        let totalSize = coreDataStack.getTotalStorageUsed()
-        let formatter = ByteCountFormatter()
-        formatter.countStyle = .file
-        return formatter.string(fromByteCount: totalSize)
     }
 }
