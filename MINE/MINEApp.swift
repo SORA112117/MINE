@@ -54,36 +54,65 @@ struct MINEApp: App {
     
     private func setupInitialData() {
         // Keychainサービスの初期化とUserDefaultsからの移行
-        KeychainService.shared.migrateFromUserDefaults()
+        do {
+            KeychainService.shared.migrateFromUserDefaults()
+        } catch {
+            print("Failed to migrate from UserDefaults: \(error)")
+        }
         
         // 初回起動時の設定
         if !UserDefaults.standard.bool(forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding) {
             // デフォルトフォルダとタグを作成
-            createDefaultData()
-            UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
+            do {
+                try createDefaultData()
+                UserDefaults.standard.set(true, forKey: Constants.UserDefaultsKeys.hasCompletedOnboarding)
+            } catch {
+                print("Failed to create default data: \(error)")
+                // 初期データ作成に失敗しても、アプリを継続起動
+            }
         }
         
         // サブスクリプション状態の検証（バックグラウンドで実行）
         Task.detached {
-            await KeychainService.shared.validateSubscription()
+            do {
+                await KeychainService.shared.validateSubscription()
+            } catch {
+                print("Failed to validate subscription: \(error)")
+            }
         }
     }
     
-    private func createDefaultData() {
+    private func createDefaultData() throws {
         let context = CoreDataStack.shared.viewContext
         
         // デフォルトフォルダ作成
         for defaultFolder in Folder.defaultFolders {
-            let entity = defaultFolder.toEntity(context: context)
-            entity.id = defaultFolder.id
+            do {
+                let entity = defaultFolder.toEntity(context: context)
+                entity.id = defaultFolder.id
+            } catch {
+                print("Failed to create folder entity for \(defaultFolder.name): \(error)")
+                throw error
+            }
         }
         
         // デフォルトタグ作成
         for defaultTag in Tag.defaultTags {
-            let entity = defaultTag.toEntity(context: context)
-            entity.id = defaultTag.id
+            do {
+                let entity = defaultTag.toEntity(context: context)
+                entity.id = defaultTag.id
+            } catch {
+                print("Failed to create tag entity for \(defaultTag.name): \(error)")
+                throw error
+            }
         }
         
-        CoreDataStack.shared.save()
+        // コンテキストの保存
+        do {
+            try context.save()
+        } catch {
+            print("Failed to save default data: \(error)")
+            throw error
+        }
     }
 }

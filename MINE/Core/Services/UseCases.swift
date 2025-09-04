@@ -104,17 +104,16 @@ class ManageFoldersUseCase {
             parentFolderId: parentId
         )
         
-        // 保存処理（実装予定）
+        try await folderRepository.save(folder)
         return folder
     }
     
     func getFolders() async throws -> [Folder] {
-        // フォルダ取得処理（実装予定）
-        return []
+        return try await folderRepository.fetchAll()
     }
     
     func deleteFolder(id: UUID) async throws {
-        // フォルダ削除処理（実装予定）
+        try await folderRepository.delete(id)
     }
 }
 
@@ -129,21 +128,20 @@ class ManageTagsUseCase {
     func createTag(name: String, color: String = "#4A90A4") async throws -> Tag {
         let tag = Tag(name: name, color: color)
         
-        // 保存処理（実装予定）
+        try await tagRepository.save(tag)
         return tag
     }
     
     func getTags() async throws -> [Tag] {
-        // タグ取得処理（実装予定）
-        return Tag.defaultTags
+        return try await tagRepository.fetchAll()
     }
     
     func deleteTag(id: UUID) async throws {
-        // タグ削除処理（実装予定）
+        try await tagRepository.delete(id)
     }
     
     func updateTagUsage(id: UUID) async throws {
-        // タグ使用回数更新（実装予定）
+        try await tagRepository.incrementUsage(id)
     }
 }
 
@@ -169,21 +167,20 @@ class ManageTemplatesUseCase {
             folderId: settings.folderId
         )
         
-        // 保存処理（実装予定）
+        try await templateRepository.save(template)
         return template
     }
     
     func getTemplates() async throws -> [RecordTemplate] {
-        // テンプレート取得処理（実装予定）
-        return RecordTemplate.defaultTemplates
+        return try await templateRepository.fetchAll()
     }
     
     func updateTemplateUsage(id: UUID) async throws {
-        // テンプレート使用回数更新（実装予定）
+        try await templateRepository.incrementUsage(id)
     }
     
     func deleteTemplate(id: UUID) async throws {
-        // テンプレート削除処理（実装予定）
+        try await templateRepository.delete(id)
     }
 }
 
