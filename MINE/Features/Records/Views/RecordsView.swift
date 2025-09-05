@@ -6,25 +6,32 @@ struct RecordsView: View {
     @State private var showingSearchFilters = false
     @State private var showingDeleteConfirmation = false
     @State private var showingBulkActions = false
+    @State private var showingSidebar = false
+    @State private var selectedViewMode: RecordViewMode = .timeline
+    @State private var sidebarWidth: CGFloat = 250
     
     var body: some View {
         NavigationStack {
-            VStack(spacing: 0) {
-                // 検索バー
-                searchBar
+            ZStack {
+                // メインコンテンツエリア
+                mainContentArea
+                    .background(Theme.background)
                 
-                // フィルター情報表示
-                if viewModel.hasActiveFilters {
-                    activeFiltersView
+                // サイドバーオーバーレイ
+                if showingSidebar {
+                    sidebarOverlay
                 }
-                
-                // 記録コンテンツ
-                recordsContent
             }
             .navigationTitle(viewModel.isSelectionMode ? viewModel.selectionStatusText : "記録")
             .navigationBarTitleDisplayMode(.large)
-            .background(Theme.background)
             .toolbar {
+                ToolbarItem(placement: .navigationBarLeading) {
+                    Button(action: { toggleSidebar() }) {
+                        Image(systemName: "sidebar.left")
+                            .foregroundColor(Theme.primary)
+                    }
+                }
+                
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if viewModel.isSelectionMode {
                         selectionToolbar
@@ -65,6 +72,98 @@ struct RecordsView: View {
             .refreshable {
                 await viewModel.loadDataAsync()
             }
+        }
+    }
+    
+    // MARK: - Main Content Area
+    private var mainContentArea: some View {
+        VStack(spacing: 0) {
+            // 表示モード選択
+            viewModeSelector
+            
+            // 検索バー
+            searchBar
+            
+            // アクティブフィルター表示
+            if viewModel.hasActiveFilters {
+                activeFiltersView
+            }
+            
+            // メインコンテンツ
+            recordsContent
+        }
+    }
+    
+    // MARK: - View Mode Selector
+    private var viewModeSelector: some View {
+        Picker("表示モード", selection: $selectedViewMode) {
+            Text("タイムライン").tag(RecordViewMode.timeline)
+            Text("カレンダー").tag(RecordViewMode.calendar)
+        }
+        .pickerStyle(SegmentedPickerStyle())
+        .padding(.horizontal)
+        .padding(.vertical, 8)
+        .background(Color.white)
+        .onChange(of: selectedViewMode) { oldValue, newValue in
+            // インタラクティブフィードバック
+            let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+            impactFeedback.impactOccurred()
+            
+            // ビューモード変更の処理
+            viewModel.changeViewMode(to: newValue)
+        }
+    }
+    
+    // MARK: - Sidebar Overlay
+    private var sidebarOverlay: some View {
+        ZStack {
+            // 背景オーバーレイ（タップで閉じる）
+            Color.black.opacity(0.3)
+                .ignoresSafeArea()
+                .onTapGesture {
+                    closeSidebar()
+                }
+            
+            // サイドバーコンテンツ
+            HStack(spacing: 0) {
+                RecordsSidebarView(
+                    viewModel: viewModel,
+                    onFolderSelected: { folder in
+                        viewModel.selectFolder(folder)
+                        closeSidebar()
+                    },
+                    onTagSelected: { tag in
+                        viewModel.selectTag(tag)
+                        closeSidebar()
+                    }
+                )
+                .frame(width: sidebarWidth)
+                .background(Color.white)
+                .shadow(radius: 10)
+                .transition(.move(edge: .leading))
+                
+                Spacer()
+            }
+        }
+        .animation(.easeInOut(duration: 0.3), value: showingSidebar)
+    }
+    
+    // MARK: - Sidebar Actions
+    private func toggleSidebar() {
+        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+        impactFeedback.impactOccurred()
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showingSidebar.toggle()
+        }
+    }
+    
+    private func closeSidebar() {
+        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+        impactFeedback.impactOccurred()
+        
+        withAnimation(.easeInOut(duration: 0.3)) {
+            showingSidebar = false
         }
     }
     
@@ -157,7 +256,18 @@ struct RecordsView: View {
             } else if viewModel.filteredRecords.isEmpty {
                 emptyStateView
             } else {
-                recordsList
+                switch selectedViewMode {
+                case .timeline:
+                    TimelineRecordsView(
+                        viewModel: viewModel,
+                        onRecordTap: handleRecordTap
+                    )
+                case .calendar:
+                    CalendarRecordsView(
+                        viewModel: viewModel,
+                        onRecordTap: handleRecordTap
+                    )
+                }
             }
         }
     }
@@ -193,29 +303,6 @@ struct RecordsView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
     
-    private var recordsList: some View {
-        LazyVGrid(
-            columns: Array(repeating: GridItem(.flexible()), count: 2),
-            spacing: Constants.UI.smallPadding
-        ) {
-            ForEach(viewModel.filteredRecords, id: \.id) { record in
-                RecordThumbnailCard(
-                    record: record,
-                    isSelected: viewModel.selectedRecords.contains(record.id),
-                    isSelectionMode: viewModel.isSelectionMode
-                ) {
-                    handleRecordTap(record)
-                }
-                .onLongPressGesture {
-                    if !viewModel.isSelectionMode {
-                        viewModel.enterSelectionMode()
-                        viewModel.toggleSelection(for: record.id)
-                    }
-                }
-            }
-        }
-        .padding()
-    }
     
     // MARK: - Toolbars
     private var normalToolbar: some View {
@@ -377,6 +464,21 @@ struct RecordThumbnailCard: View {
         )
         .scaleEffect(isSelected ? 0.95 : 1.0)
         .animation(.easeInOut(duration: 0.1), value: isSelected)
+    }
+}
+
+// MARK: - Supporting Types
+enum RecordViewMode: String, CaseIterable {
+    case timeline = "timeline"
+    case calendar = "calendar"
+    
+    var displayName: String {
+        switch self {
+        case .timeline:
+            return "タイムライン"
+        case .calendar:
+            return "カレンダー"
+        }
     }
 }
 

@@ -253,7 +253,7 @@ class RecordsViewModel: ObservableObject {
             
             // タグフィルター
             if !searchFilterState.selectedTags.isEmpty {
-                let recordTags = Set(record.tags ?? [])
+                let recordTags = Set(record.tags)
                 if searchFilterState.selectedTags.intersection(recordTags).isEmpty {
                     return false
                 }
@@ -399,5 +399,61 @@ class RecordsViewModel: ObservableObject {
     
     func clearError() {
         error = nil
+    }
+    
+    // MARK: - New View Mode Support
+    
+    func changeViewMode(to mode: RecordViewMode) {
+        // ビューモード変更時の処理
+        // 必要に応じてデータの再読み込みや状態更新を実行
+    }
+    
+    func changeTimeScale(to timeScale: TimeScale) {
+        // タイムスケール変更時の処理
+        // タイムライン表示での期間変更に対応
+    }
+    
+    // MARK: - Sidebar Support
+    
+    var rootFolders: [Folder] {
+        // ルートレベルのフォルダのみを返す（階層構造対応）
+        return folders.filter { $0.parentFolderId == nil }
+    }
+    
+    var availableTags: [Tag] {
+        // 使用可能なタグリストを返す
+        return tags
+    }
+    
+    var selectedFolder: Folder? {
+        return searchFilterState.selectedFolder
+    }
+    
+    var selectedTags: Set<Tag> {
+        return searchFilterState.selectedTags
+    }
+    
+    func selectFolder(_ folder: Folder?) {
+        updateFolderFilter(folder)
+    }
+    
+    func selectTag(_ tag: Tag) {
+        var currentTags = searchFilterState.selectedTags
+        if currentTags.contains(tag) {
+            currentTags.remove(tag)
+        } else {
+            currentTags.insert(tag)
+        }
+        updateTagsFilter(currentTags)
+    }
+    
+    func clearAllFilters() {
+        clearFilters()
+    }
+    
+    func createFolder(name: String) async throws {
+        // フォルダ作成のロジック
+        _ = try await manageFoldersUseCase.createFolder(name: name, parentId: nil)
+        try await loadFolders()
     }
 }
