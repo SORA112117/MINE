@@ -50,29 +50,38 @@ struct VideoEditorView: View {
     
     // MARK: - Navigation Bar
     private var navigationBar: some View {
-        HStack {
-            Button("キャンセル") {
-                dismiss()
-            }
-            .foregroundColor(.white)
-            
-            Spacer()
-            
+        ZStack {
+            // 中央のタイトル（固定位置）
             Text("編集")
                 .font(.headline)
                 .foregroundColor(.white)
             
-            Spacer()
-            
-            // プレミアムプラン案内（フリープランで5秒超過時）
-            if viewModel.isOverFreePlanLimit {
-                VStack(alignment: .trailing, spacing: 2) {
-                    Text("5秒まで")
-                        .font(.caption2)
-                        .foregroundColor(.yellow)
-                    Text("プレミアムで無制限")
-                        .font(.caption2)
-                        .foregroundColor(.yellow.opacity(0.8))
+            HStack {
+                // 左側のキャンセルボタン
+                Button("キャンセル") {
+                    dismiss()
+                }
+                .foregroundColor(.white)
+                
+                Spacer()
+                
+                // 右側のプレミアム案内（固定幅で配置）
+                Group {
+                    if viewModel.isOverFreePlanLimit {
+                        VStack(alignment: .trailing, spacing: 2) {
+                            Text("5秒まで")
+                                .font(.caption2)
+                                .foregroundColor(.yellow)
+                            Text("プレミアムで無制限")
+                                .font(.caption2)
+                                .foregroundColor(.yellow.opacity(0.8))
+                        }
+                    } else {
+                        // 空のスペース（レイアウト維持のため）
+                        Rectangle()
+                            .fill(Color.clear)
+                            .frame(width: 80, height: 1)
+                    }
                 }
             }
         }
