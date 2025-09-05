@@ -86,10 +86,6 @@ class LocalDataSource {
             predicates.append(NSPredicate(format: "comment CONTAINS[cd] %@", searchText))
         }
         
-        // フォルダIDフィルタリング
-        if let folderId = filter.folderId {
-            predicates.append(NSPredicate(format: "folder.id == %@", folderId as CVarArg))
-        }
         
         // タグフィルタリング
         if let tags = filter.tags, !tags.isEmpty {
@@ -145,7 +141,7 @@ class LocalDataSource {
         if let entity = entities.first {
             // 既存のエンティティを更新
             entity.updatedAt = Date()
-            entity.comment = record.comment
+            entity.comment = record.title
             entity.duration = record.duration ?? 0
             // 他のプロパティも必要に応じて更新
             

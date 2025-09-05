@@ -338,18 +338,11 @@ struct RecordThumbnailView: View {
                         .font(.caption2)
                         .foregroundColor(Theme.gray5)
                     
-                    if let comment = record.comment, !comment.isEmpty {
-                        Text(comment)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(Theme.text)
-                            .lineLimit(2)
-                    } else {
-                        Text(record.type.displayName)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(Theme.text)
-                    }
+                    Text(record.title)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(Theme.text)
+                        .lineLimit(2)
                     
                     if let duration = record.formattedDuration {
                         Text(duration)

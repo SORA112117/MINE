@@ -6,9 +6,7 @@ struct RecordsView: View {
     @State private var showingSearchFilters = false
     @State private var showingDeleteConfirmation = false
     @State private var showingBulkActions = false
-    @State private var showingSidebar = false
     @State private var selectedViewMode: RecordViewMode = .timeline
-    @State private var sidebarWidth: CGFloat = 250
     
     var body: some View {
         NavigationStack {
@@ -17,20 +15,10 @@ struct RecordsView: View {
                 mainContentArea
                     .background(Theme.background)
                 
-                // サイドバーオーバーレイ
-                if showingSidebar {
-                    sidebarOverlay
-                }
             }
             .navigationTitle(viewModel.isSelectionMode ? viewModel.selectionStatusText : "記録")
             .navigationBarTitleDisplayMode(.large)
             .toolbar {
-                ToolbarItem(placement: .navigationBarLeading) {
-                    Button(action: { toggleSidebar() }) {
-                        Image(systemName: "sidebar.left")
-                            .foregroundColor(Theme.primary)
-                    }
-                }
                 
                 ToolbarItem(placement: .navigationBarTrailing) {
                     if viewModel.isSelectionMode {
@@ -114,59 +102,6 @@ struct RecordsView: View {
         }
     }
     
-    // MARK: - Sidebar Overlay
-    private var sidebarOverlay: some View {
-        ZStack {
-            // 背景オーバーレイ（タップで閉じる）
-            Color.black.opacity(0.3)
-                .ignoresSafeArea()
-                .onTapGesture {
-                    closeSidebar()
-                }
-            
-            // サイドバーコンテンツ
-            HStack(spacing: 0) {
-                RecordsSidebarView(
-                    viewModel: viewModel,
-                    onFolderSelected: { folder in
-                        viewModel.selectFolder(folder)
-                        closeSidebar()
-                    },
-                    onTagSelected: { tag in
-                        viewModel.selectTag(tag)
-                        closeSidebar()
-                    }
-                )
-                .frame(width: sidebarWidth)
-                .background(Color.white)
-                .shadow(radius: 10)
-                .transition(.move(edge: .leading))
-                
-                Spacer()
-            }
-        }
-        .animation(.easeInOut(duration: 0.3), value: showingSidebar)
-    }
-    
-    // MARK: - Sidebar Actions
-    private func toggleSidebar() {
-        let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
-        impactFeedback.impactOccurred()
-        
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showingSidebar.toggle()
-        }
-    }
-    
-    private func closeSidebar() {
-        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
-        impactFeedback.impactOccurred()
-        
-        withAnimation(.easeInOut(duration: 0.3)) {
-            showingSidebar = false
-        }
-    }
-    
     // MARK: - Search Bar
     private var searchBar: some View {
         HStack {
@@ -227,14 +162,6 @@ struct RecordsView: View {
                     }
                 }
                 
-                if let selectedFolder = viewModel.searchFilterState.selectedFolder {
-                    FilterChip(
-                        text: selectedFolder.name,
-                        icon: "folder.fill"
-                    ) {
-                        viewModel.updateFolderFilter(nil)
-                    }
-                }
                 
                 Button("すべてクリア") {
                     viewModel.clearFilters()
@@ -417,18 +344,11 @@ struct RecordThumbnailCard: View {
                         .font(.caption2)
                         .foregroundColor(Theme.gray5)
                     
-                    if let comment = record.comment, !comment.isEmpty {
-                        Text(comment)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(Theme.text)
-                            .lineLimit(2)
-                    } else {
-                        Text(record.type.displayName)
-                            .font(.caption)
-                            .fontWeight(.medium)
-                            .foregroundColor(Theme.gray4)
-                    }
+                    Text(record.title)
+                        .font(.caption)
+                        .fontWeight(.medium)
+                        .foregroundColor(Theme.text)
+                        .lineLimit(2)
                     
                     // タグ表示
                     if !record.tags.isEmpty {
@@ -532,19 +452,6 @@ struct SearchFiltersView: View {
                     .pickerStyle(.menu)
                 }
                 
-                // フォルダフィルター
-                Section("フォルダ") {
-                    Picker("フォルダ", selection: Binding(
-                        get: { viewModel.searchFilterState.selectedFolder },
-                        set: { viewModel.updateFolderFilter($0) }
-                    )) {
-                        Text("すべて").tag(Folder?.none)
-                        ForEach(viewModel.folders, id: \.id) { folder in
-                            Text(folder.name).tag(Folder?.some(folder))
-                        }
-                    }
-                    .pickerStyle(.menu)
-                }
                 
                 // ソート設定
                 Section("並び順") {
@@ -602,12 +509,6 @@ struct BulkActionsView: View {
         NavigationStack {
             List {
                 Section {
-                    Button {
-                        viewModel.showingFolderPicker = true
-                        dismiss()
-                    } label: {
-                        Label("フォルダに移動", systemImage: "folder")
-                    }
                     
                     Button {
                         viewModel.showingTagEditor = true

@@ -6,7 +6,6 @@ struct SearchFilterState {
     var searchText: String = ""
     var selectedType: RecordType?
     var selectedTags: Set<Tag> = []
-    var selectedFolder: Folder?
     var dateRange: ClosedRange<Date>?
     var sortBy: SortBy = .createdAt
     var sortOrder: SortOrder = .descending
@@ -29,12 +28,10 @@ struct SearchFilterState {
 class RecordsViewModel: ObservableObject {
     // MARK: - Published Properties
     @Published var records: [Record] = []
-    @Published var folders: [Folder] = []
     @Published var tags: [Tag] = []
     @Published var isLoading = false
     @Published var error: Error?
     @Published var searchFilterState = SearchFilterState()
-    @Published var showingFolderPicker = false
     @Published var showingTagEditor = false
     @Published var selectedRecords: Set<UUID> = []
     @Published var isSelectionMode = false
@@ -42,7 +39,6 @@ class RecordsViewModel: ObservableObject {
     // MARK: - Use Cases
     private let getRecordsUseCase: GetRecordsUseCase
     private let deleteRecordUseCase: DeleteRecordUseCase
-    private let manageFoldersUseCase: ManageFoldersUseCase
     private let manageTagsUseCase: ManageTagsUseCase
     private var cancellables = Set<AnyCancellable>()
     
@@ -53,12 +49,10 @@ class RecordsViewModel: ObservableObject {
     init(
         getRecordsUseCase: GetRecordsUseCase,
         deleteRecordUseCase: DeleteRecordUseCase,
-        manageFoldersUseCase: ManageFoldersUseCase,
         manageTagsUseCase: ManageTagsUseCase
     ) {
         self.getRecordsUseCase = getRecordsUseCase
         self.deleteRecordUseCase = deleteRecordUseCase
-        self.manageFoldersUseCase = manageFoldersUseCase
         self.manageTagsUseCase = manageTagsUseCase
         
         setupBindings()
@@ -101,7 +95,6 @@ class RecordsViewModel: ObservableObject {
         
         do {
             try await loadRecords()
-            try await loadFolders()
             try await loadTags()
         } catch {
             // Task がキャンセルされた場合はエラーを設定しない
@@ -138,43 +131,6 @@ class RecordsViewModel: ObservableObject {
         try await loadRecords()
     }
     
-    func moveRecordsToFolder(_ folderId: UUID?) async throws {
-        // 選択された記録をフォルダに移動
-        for recordId in selectedRecords {
-            if let recordIndex = records.firstIndex(where: { $0.id == recordId }) {
-                var updatedRecord = records[recordIndex]
-                
-                // Record構造体を更新（folderId変更）
-                let newRecord = Record(
-                    id: updatedRecord.id,
-                    type: updatedRecord.type,
-                    createdAt: updatedRecord.createdAt,
-                    updatedAt: Date(), // 更新日時を現在時刻に
-                    duration: updatedRecord.duration,
-                    fileURL: updatedRecord.fileURL,
-                    thumbnailURL: updatedRecord.thumbnailURL,
-                    comment: updatedRecord.comment,
-                    tags: updatedRecord.tags,
-                    folderId: folderId, // フォルダIDを更新
-                    templateId: updatedRecord.templateId
-                )
-                
-                // TODO: 実際のUse Case実装時は以下のようになる
-                // try await updateRecordUseCase.updateFolder(recordId: recordId, folderId: folderId)
-                
-                // 一時的にローカル配列を更新
-                records[recordIndex] = newRecord
-            }
-        }
-        
-        selectedRecords.removeAll()
-        isSelectionMode = false
-        
-        // UI更新のためのリフレッシュ（実際の実装ではUse Caseからリロードする）
-        await MainActor.run {
-            objectWillChange.send()
-        }
-    }
     
     func addTagsToRecords(_ tags: [Tag]) async throws {
         // 選択された記録にタグを追加
@@ -196,9 +152,8 @@ class RecordsViewModel: ObservableObject {
                     duration: updatedRecord.duration,
                     fileURL: updatedRecord.fileURL,
                     thumbnailURL: updatedRecord.thumbnailURL,
-                    comment: updatedRecord.comment,
+                    title: updatedRecord.title,
                     tags: updatedTags, // タグを更新
-                    folderId: updatedRecord.folderId,
                     templateId: updatedRecord.templateId
                 )
                 
@@ -281,10 +236,6 @@ class RecordsViewModel: ObservableObject {
         applyFilters()
     }
     
-    func updateFolderFilter(_ folder: Folder?) {
-        searchFilterState.selectedFolder = folder
-        applyFilters()
-    }
     
     func updateDateRangeFilter(_ dateRange: ClosedRange<Date>?) {
         searchFilterState.dateRange = dateRange
@@ -309,12 +260,12 @@ class RecordsViewModel: ObservableObject {
             // テキスト検索
             if !searchFilterState.searchText.isEmpty {
                 let searchLower = searchFilterState.searchText.lowercased()
-                let matchesComment = record.comment?.lowercased().contains(searchLower) ?? false
+                let matchesTitle = record.title.lowercased().contains(searchLower)
                 let matchesTags = record.tags.contains { tag in
                     tag.name.lowercased().contains(searchLower)
                 }
                 
-                if !matchesComment && !matchesTags {
+                if !matchesTitle && !matchesTags {
                     return false
                 }
             }
@@ -334,12 +285,6 @@ class RecordsViewModel: ObservableObject {
                 }
             }
             
-            // フォルダフィルター
-            if let selectedFolder = searchFilterState.selectedFolder {
-                if record.folderId != selectedFolder.id {
-                    return false
-                }
-            }
             
             // 日付範囲フィルター
             if let dateRange = searchFilterState.dateRange {
@@ -352,7 +297,7 @@ class RecordsViewModel: ObservableObject {
         }
         
         // ソート
-        return filtered.sorted { record1, record2 in
+        return filtered.sorted(by: { record1, record2 in
             let isAscending = searchFilterState.sortOrder == .ascending
             
             switch searchFilterState.sortBy {
@@ -365,18 +310,17 @@ class RecordsViewModel: ObservableObject {
                 let duration2 = record2.duration ?? 0
                 return isAscending ? duration1 < duration2 : duration1 > duration2
             case .name:
-                let name1 = record1.comment ?? ""
-                let name2 = record2.comment ?? ""
+                let name1 = record1.title
+                let name2 = record2.title
                 return isAscending ? name1 < name2 : name1 > name2
             }
-        }
+        })
     }
     
     var hasActiveFilters: Bool {
         return !searchFilterState.searchText.isEmpty ||
                searchFilterState.selectedType != nil ||
                !searchFilterState.selectedTags.isEmpty ||
-               searchFilterState.selectedFolder != nil ||
                searchFilterState.dateRange != nil
     }
     
@@ -418,13 +362,6 @@ class RecordsViewModel: ObservableObject {
         }
     }
     
-    private func loadFolders() async throws {
-        let loadedFolders = try await manageFoldersUseCase.getFolders()
-        
-        await MainActor.run {
-            self.folders = loadedFolders
-        }
-    }
     
     private func loadTags() async throws {
         let loadedTags = try await manageTagsUseCase.getTags()
@@ -438,7 +375,6 @@ class RecordsViewModel: ObservableObject {
         return RecordFilter(
             types: searchFilterState.selectedType.map { [$0] },
             tags: Array(searchFilterState.selectedTags).isEmpty ? nil : Array(searchFilterState.selectedTags),
-            folderId: searchFilterState.selectedFolder?.id,
             dateRange: searchFilterState.dateRange,
             searchText: searchFilterState.searchText.isEmpty ? nil : searchFilterState.searchText,
             limit: nil,
@@ -497,28 +433,15 @@ class RecordsViewModel: ObservableObject {
         // タイムライン表示での期間変更に対応
     }
     
-    // MARK: - Sidebar Support
-    
-    var rootFolders: [Folder] {
-        // ルートレベルのフォルダのみを返す（階層構造対応）
-        return folders.filter { $0.parentFolderId == nil }
-    }
+    // MARK: - Sidebar Support（タグベース機能のみ）
     
     var availableTags: [Tag] {
         // 使用可能なタグリストを返す
         return tags
     }
     
-    var selectedFolder: Folder? {
-        return searchFilterState.selectedFolder
-    }
-    
     var selectedTags: Set<Tag> {
         return searchFilterState.selectedTags
-    }
-    
-    func selectFolder(_ folder: Folder?) {
-        updateFolderFilter(folder)
     }
     
     func selectTag(_ tag: Tag) {
@@ -535,9 +458,4 @@ class RecordsViewModel: ObservableObject {
         clearFilters()
     }
     
-    func createFolder(name: String) async throws {
-        // フォルダ作成のロジック
-        _ = try await manageFoldersUseCase.createFolder(name: name, parentId: nil)
-        try await loadFolders()
-    }
 }

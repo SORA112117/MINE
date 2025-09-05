@@ -537,7 +537,7 @@ struct CalendarRecordRow: View {
                 
                 // 情報
                 VStack(alignment: .leading, spacing: 2) {
-                    Text(record.comment?.isEmpty == false ? record.comment! : record.type.displayName)
+                    Text(record.title)
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(Theme.text)

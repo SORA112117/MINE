@@ -16,9 +16,8 @@ class CreateRecordUseCase {
         type: RecordType,
         fileURL: URL,
         duration: TimeInterval? = nil,
-        comment: String? = nil,
-        tags: [Tag] = [],
-        folderId: UUID? = nil
+        title: String,
+        tags: [Tag] = []
     ) async throws -> Record {
         
         // サムネイル生成
@@ -32,9 +31,8 @@ class CreateRecordUseCase {
             duration: duration,
             fileURL: fileURL,
             thumbnailURL: thumbnailURL,
-            comment: comment,
+            title: title,
             tags: Set(tags), // 配列をSetに変換
-            folderId: folderId,
             templateId: nil
         )
         
@@ -107,28 +105,6 @@ class UpdateRecordUseCase {
         self.manageTagsUseCase = manageTagsUseCase
     }
     
-    func updateFolder(recordId: UUID, folderId: UUID?) async throws {
-        guard var record = try await recordRepository.fetchById(recordId) else {
-            throw UseCaseError.recordNotFound
-        }
-        
-        // Record構造体を更新（folderId変更）
-        let updatedRecord = Record(
-            id: record.id,
-            type: record.type,
-            createdAt: record.createdAt,
-            updatedAt: Date(),
-            duration: record.duration,
-            fileURL: record.fileURL,
-            thumbnailURL: record.thumbnailURL,
-            comment: record.comment,
-            tags: record.tags,
-            folderId: folderId,
-            templateId: record.templateId
-        )
-        
-        try await recordRepository.update(updatedRecord)
-    }
     
     func updateTags(recordId: UUID, tags: Set<Tag>) async throws {
         guard var record = try await recordRepository.fetchById(recordId) else {
@@ -146,9 +122,8 @@ class UpdateRecordUseCase {
             duration: record.duration,
             fileURL: record.fileURL,
             thumbnailURL: record.thumbnailURL,
-            comment: record.comment,
+            title: record.title,
             tags: tags,
-            folderId: record.folderId,
             templateId: record.templateId
         )
         
@@ -158,12 +133,12 @@ class UpdateRecordUseCase {
         await updateTagUsageCountsAfterChange(oldTags: oldTags, newTags: tags)
     }
     
-    func updateComment(recordId: UUID, comment: String?) async throws {
+    func updateTitle(recordId: UUID, title: String) async throws {
         guard var record = try await recordRepository.fetchById(recordId) else {
             throw UseCaseError.recordNotFound
         }
         
-        // Record構造体を更新（comment変更）
+        // Record構造体を更新（title変更）
         let updatedRecord = Record(
             id: record.id,
             type: record.type,
@@ -172,9 +147,8 @@ class UpdateRecordUseCase {
             duration: record.duration,
             fileURL: record.fileURL,
             thumbnailURL: record.thumbnailURL,
-            comment: comment,
+            title: title,
             tags: record.tags,
-            folderId: record.folderId,
             templateId: record.templateId
         )
         
@@ -196,32 +170,6 @@ class UpdateRecordUseCase {
     }
 }
 
-// MARK: - Manage Folders Use Case
-class ManageFoldersUseCase {
-    private let folderRepository: FolderRepository
-    
-    init(folderRepository: FolderRepository) {
-        self.folderRepository = folderRepository
-    }
-    
-    func createFolder(name: String, parentId: UUID? = nil) async throws -> Folder {
-        let folder = Folder(
-            name: name,
-            parentFolderId: parentId
-        )
-        
-        try await folderRepository.save(folder)
-        return folder
-    }
-    
-    func getFolders() async throws -> [Folder] {
-        return try await folderRepository.fetchAll()
-    }
-    
-    func deleteFolder(id: UUID) async throws {
-        try await folderRepository.delete(id)
-    }
-}
 
 // MARK: - Manage Tags Use Case
 class ManageTagsUseCase {
@@ -278,7 +226,6 @@ class ManageTemplatesUseCase {
             duration: settings.duration,
             cropRect: settings.cropRect,
             tagIds: settings.tagIds,
-            folderId: settings.folderId
         )
         
         try await templateRepository.save(template)

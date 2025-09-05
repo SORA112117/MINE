@@ -87,9 +87,8 @@ class HomeViewModel: ObservableObject {
             type: recordType,
             fileURL: tempURL,
             duration: nil, // 写真の場合はnull
-            comment: "ライブラリから追加",
-            tags: [],
-            folderId: nil
+            title: "ライブラリから追加",
+            tags: []
         )
         
         // 統計を再読み込み
@@ -99,7 +98,15 @@ class HomeViewModel: ObservableObject {
     // MARK: - Private Methods
     
     private func setupBindings() {
-        // 必要に応じて追加のバインディング
+        // 新しい記録が保存された時の通知を監視
+        NotificationCenter.default.publisher(for: .recordSaved)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    // 統計データを即座に再読み込み
+                    await self?.loadDataAsync()
+                }
+            }
+            .store(in: &cancellables)
     }
     
     private func loadOverallStats() async throws {
@@ -172,7 +179,6 @@ class HomeViewModel: ObservableObject {
 struct RecordFilter {
     let types: [RecordType]?
     let tags: [Tag]?
-    let folderId: UUID?
     let dateRange: ClosedRange<Date>?
     let searchText: String?
     let limit: Int?
@@ -195,7 +201,6 @@ struct RecordFilter {
     init(
         types: [RecordType]? = nil,
         tags: [Tag]? = nil,
-        folderId: UUID? = nil,
         dateRange: ClosedRange<Date>? = nil,
         searchText: String? = nil,
         limit: Int? = nil,
@@ -205,7 +210,6 @@ struct RecordFilter {
     ) {
         self.types = types
         self.tags = tags
-        self.folderId = folderId
         self.dateRange = dateRange
         self.searchText = searchText
         self.limit = limit

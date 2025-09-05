@@ -62,10 +62,6 @@ struct MainTabView: View {
                 RecordDetailView(record: record)
             }
             
-        case .folderPicker:
-            NavigationStack {
-                Text("フォルダピッカー（実装予定）")
-            }
             
         case .tagEditor:
             NavigationStack {
@@ -74,12 +70,14 @@ struct MainTabView: View {
             
         case .templateEditor(let template):
             NavigationStack {
-                TemplateEditorView(template: template)
+                Text("テンプレートエディター（実装予定）")
+                    .navigationTitle("テンプレート編集")
             }
             
         case .subscription:
             NavigationStack {
-                SubscriptionView()
+                Text("サブスクリプション（実装予定）")
+                    .navigationTitle("プレミアム機能")
             }
         }
     }

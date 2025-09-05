@@ -28,7 +28,6 @@ enum Tab: String, CaseIterable {
 enum Sheet: Identifiable {
     case recording(RecordType)
     case recordDetail(Record)
-    case folderPicker
     case tagEditor
     case templateEditor(RecordTemplate?)
     case subscription
@@ -37,7 +36,6 @@ enum Sheet: Identifiable {
         switch self {
         case .recording(let type): return "recording_\(type.rawValue)"
         case .recordDetail(let record): return "record_\(record.id.uuidString)"
-        case .folderPicker: return "folder_picker"
         case .tagEditor: return "tag_editor"
         case .templateEditor(let template): return "template_\(template?.id.uuidString ?? "new")"
         case .subscription: return "subscription"
@@ -79,9 +77,6 @@ class AppCoordinator: ObservableObject {
         presentedSheet = .recordDetail(record)
     }
     
-    func showFolderPicker() {
-        presentedSheet = .folderPicker
-    }
     
     func showTagEditor() {
         presentedSheet = .tagEditor

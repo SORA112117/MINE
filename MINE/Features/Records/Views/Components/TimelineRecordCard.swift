@@ -226,17 +226,11 @@ struct TimelineRecordCard: View {
                     .font(.caption2)
                     .foregroundColor(Theme.gray5)
                 
-                if let comment = record.comment, !comment.isEmpty {
-                    Text(comment)
-                        .font(.subheadline)
-                        .fontWeight(.medium)
-                        .foregroundColor(Theme.text)
-                        .lineLimit(2)
-                } else {
-                    Text("記録 #\(record.id.uuidString.prefix(8))")
-                        .font(.subheadline)
-                        .foregroundColor(Theme.gray4)
-                }
+                Text(record.title)
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.text)
+                    .lineLimit(2)
             }
             
             Spacer()

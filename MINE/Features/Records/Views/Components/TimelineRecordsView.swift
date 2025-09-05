@@ -11,14 +11,8 @@ struct TimelineRecordsView: View {
     @State private var comparisonMode: ComparisonMode = .sideBySide
     
     var body: some View {
-        VStack(spacing: 0) {
-            // タイムスケールコントロール
-            timeScaleControl
-            
-            // タイムラインコンテンツ
-            timelineContent
-        }
-        .background(Theme.background)
+        timelineContent
+            .background(Theme.background)
     }
     
     // MARK: - Time Scale Control
@@ -26,9 +20,9 @@ struct TimelineRecordsView: View {
         VStack(spacing: 8) {
             // タイムスケール選択
             Picker("時間軸", selection: $selectedTimeScale) {
-                Text("日").tag(TimeScale.day)
                 Text("週").tag(TimeScale.week)
                 Text("月").tag(TimeScale.month)
+                Text("全期間").tag(TimeScale.all)
             }
             .pickerStyle(SegmentedPickerStyle())
             .padding(.horizontal)
@@ -80,28 +74,98 @@ struct TimelineRecordsView: View {
     private var timelineContent: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
-                // 時系列でグループ化されたセクション
-                ForEach(groupedRecords.keys.sorted(by: >), id: \.self) { period in
-                    TimelinePeriodSection(
-                        period: period,
-                        records: groupedRecords[period] ?? [],
-                        timeScale: selectedTimeScale,
-                        comparisonMode: comparisonMode,
-                        folders: viewModel.folders,
-                        onRecordTap: onRecordTap
-                    )
-                }
+                // 現在の日付・期間表示
+                currentPeriodHeader
                 
-                // フォルダセクション（オプション）
-                if !groupedRecordsByFolder.isEmpty && selectedTimeScale == .month {
-                    folderSections
-                }
+                // タグ別横並び表示
+                tagBasedRecordsView
             }
             .padding()
         }
         .refreshable {
             await viewModel.loadDataAsync()
         }
+    }
+    
+    // MARK: - Current Period Header
+    private var currentPeriodHeader: some View {
+        VStack(spacing: 12) {
+            // 時間軸選択
+            Picker("時間軸", selection: $selectedTimeScale) {
+                Text("週").tag(TimeScale.week)
+                Text("月").tag(TimeScale.month)
+                Text("全期間").tag(TimeScale.all)
+            }
+            .pickerStyle(SegmentedPickerStyle())
+            .padding(.horizontal)
+            .onChange(of: selectedTimeScale) { oldValue, newValue in
+                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                impactFeedback.impactOccurred()
+                
+                viewModel.changeTimeScale(to: newValue)
+            }
+            
+            // 現在の期間表示
+            VStack(spacing: 8) {
+                Text(currentPeriodText)
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                if !viewModel.filteredRecords.isEmpty {
+                    Text("\(viewModel.filteredRecords.count) 件の記録")
+                        .font(.caption)
+                        .foregroundColor(Theme.gray5)
+                }
+            }
+        }
+        .frame(maxWidth: .infinity)
+        .padding(.vertical)
+        .background(Theme.gray1.opacity(0.3))
+        .cornerRadius(12)
+    }
+    
+    // MARK: - Tag Based Records View
+    private var tagBasedRecordsView: some View {
+        LazyVStack(spacing: 20) {
+            ForEach(groupedRecordsByTag.keys.sorted(), id: \.self) { tagName in
+                TagRowSection(
+                    tagName: tagName,
+                    records: groupedRecordsByTag[tagName] ?? [],
+                    onRecordTap: onRecordTap
+                )
+            }
+        }
+    }
+    
+    // タグ別グループ化
+    private var groupedRecordsByTag: [String: [Record]] {
+        let filtered = viewModel.filteredRecords
+        var grouped: [String: [Record]] = [:]
+        
+        // タグなしの記録
+        var untaggedRecords: [Record] = []
+        
+        for record in filtered {
+            if record.tags.isEmpty {
+                untaggedRecords.append(record)
+            } else {
+                // 各タグごとに記録を分類
+                for tag in record.tags {
+                    if grouped[tag.name] == nil {
+                        grouped[tag.name] = []
+                    }
+                    grouped[tag.name]?.append(record)
+                }
+            }
+        }
+        
+        // タグなしの記録があれば追加
+        if !untaggedRecords.isEmpty {
+            grouped["タグなし"] = untaggedRecords
+        }
+        
+        return grouped
     }
     
     // フォルダ別セクション表示
@@ -134,8 +198,9 @@ struct TimelineRecordsView: View {
         let calendar = Calendar.current
         return Dictionary(grouping: viewModel.filteredRecords) { record in
             switch selectedTimeScale {
-            case .day:
-                return calendar.startOfDay(for: record.createdAt)
+            case .all:
+                // 全期間の場合は年単位でグループ化
+                return calendar.dateInterval(of: .year, for: record.createdAt)?.start ?? record.createdAt
             case .week:
                 return calendar.dateInterval(of: .weekOfYear, for: record.createdAt)?.start ?? record.createdAt
             case .month:
@@ -144,29 +209,21 @@ struct TimelineRecordsView: View {
         }
     }
     
-    // フォルダごとのグループ化
+    // タグごとのグループ化（フォルダ機能は削除）
     private var groupedRecordsByFolder: [String: [Record]] {
         return Dictionary(grouping: viewModel.filteredRecords) { record in
-            // フォルダIDからフォルダ名を取得
-            if let folderId = record.folderId,
-               let folder = viewModel.folders.first(where: { $0.id == folderId }) {
-                return folder.name
-            } else {
-                return "未分類"
-            }
+            // フォルダ機能は削除、タグベース分類に移行
+            return "全ての記録"
         }
     }
     
     private var currentPeriodText: String {
-        let formatter = DateFormatter()
         switch selectedTimeScale {
-        case .day:
-            formatter.dateStyle = .medium
-            return "最近30日"
+        case .all:
+            return "全期間の記録"
         case .week:
             return "最近12週"
         case .month:
-            formatter.dateFormat = "yyyy年M月"
             return "最近12ヶ月"
         }
     }
@@ -193,7 +250,6 @@ struct TimelinePeriodSection: View {
     let records: [Record]
     let timeScale: TimeScale
     let comparisonMode: ComparisonMode
-    let folders: [Folder]
     let onRecordTap: (Record) -> Void
     
     @State private var selectedRecordIndex = 0
@@ -386,9 +442,8 @@ struct TimelinePeriodSection: View {
     private var formattedPeriod: String {
         let formatter = DateFormatter()
         switch timeScale {
-        case .day:
-            formatter.dateStyle = .medium
-            return formatter.string(from: period)
+        case .all:
+            return "全期間"
         case .week:
             let calendar = Calendar.current
             if let weekInterval = calendar.dateInterval(of: .weekOfYear, for: period) {
@@ -426,15 +481,15 @@ struct TimelinePeriodSection: View {
 
 // MARK: - Supporting Enums
 enum TimeScale: String, CaseIterable {
-    case day = "day"
     case week = "week"
     case month = "month"
+    case all = "all"
     
     var displayName: String {
         switch self {
-        case .day: return "日"
         case .week: return "週"
         case .month: return "月"
+        case .all: return "全期間"
         }
     }
 }
@@ -507,5 +562,85 @@ struct FolderSection: View {
         .cornerRadius(Constants.UI.cornerRadius)
         .shadow(color: Theme.shadowColor, radius: 2, x: 0, y: 1)
         .padding(.horizontal)
+    }
+}
+
+// MARK: - Tag Row Section
+struct TagRowSection: View {
+    let tagName: String
+    let records: [Record]
+    let onRecordTap: (Record) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            // タグヘッダー（コンパクト化）
+            HStack {
+                Text(tagName)
+                    .font(.subheadline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                Spacer()
+                
+                Text("\(records.count) 件")
+                    .font(.caption2)
+                    .foregroundColor(Theme.gray5)
+            }
+            
+            // 横スクロール記録リスト（間隔調整）
+            ScrollView(.horizontal, showsIndicators: false) {
+                LazyHStack(spacing: 8) {
+                    ForEach(records.sorted { $0.createdAt > $1.createdAt }, id: \.id) { record in
+                        CompactRecordCard(
+                            record: record,
+                            onTap: { onRecordTap(record) }
+                        )
+                    }
+                }
+                .padding(.horizontal)
+            }
+        }
+        .padding(.vertical, 8)
+        .padding(.horizontal, 12)
+        .background(Color.white)
+        .cornerRadius(10)
+        .shadow(color: Theme.shadowColor, radius: 1, x: 0, y: 1)
+    }
+}
+
+// MARK: - Compact Record Card
+struct CompactRecordCard: View {
+    let record: Record
+    let onTap: () -> Void
+    
+    var body: some View {
+        Button(action: onTap) {
+            VStack(spacing: 4) {
+                // サムネイル/アイコン（小型化）
+                RoundedRectangle(cornerRadius: 6)
+                    .fill(Theme.gray1)
+                    .frame(width: 60, height: 60)
+                    .overlay(
+                        Image(systemName: record.type.systemImage)
+                            .font(.body)
+                            .foregroundColor(Theme.primary)
+                    )
+                
+                // 記録情報（コンパクト化）
+                VStack(spacing: 2) {
+                    Text(record.title)
+                        .font(.caption2)
+                        .fontWeight(.medium)
+                        .foregroundColor(Theme.text)
+                        .lineLimit(1)
+                    
+                    Text(record.createdAt.formatted(.dateTime.month().day()))
+                        .font(.system(size: 10))
+                        .foregroundColor(Theme.gray4)
+                }
+            }
+            .frame(width: 76)
+        }
+        .buttonStyle(PlainButtonStyle())
     }
 }

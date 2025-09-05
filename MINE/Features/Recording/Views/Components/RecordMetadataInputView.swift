@@ -9,13 +9,9 @@ struct RecordMetadataInputView: View {
     let recordType: RecordType
     let onSave: (RecordMetadata) -> Void
     
-    @State private var comment = ""
-    @State private var selectedFolder: Folder?
-    @State private var selectedTags: Set<Tag> = []
+    @State private var title = ""
+    @State private var selectedTag: Tag? = nil
     @State private var newTagName = ""
-    @State private var showingFolderCreation = false
-    @State private var newFolderName = ""
-    @State private var availableFolders: [Folder] = []
     @State private var availableTags: [Tag] = []
     @State private var isLoading = false
     @State private var showingVideoEditor = false
@@ -34,11 +30,10 @@ struct RecordMetadataInputView: View {
                         // プレビューセクション
                         previewSection
                         
-                        // コメントセクション
-                        commentSection
+                        // タイトルセクション
+                        titleSection
                         
-                        // フォルダセクション
-                        folderSection
+                        // フォルダ機能は削除済み
                         
                         // タグセクション
                         tagSection
@@ -66,8 +61,8 @@ struct RecordMetadataInputView: View {
                         saveRecord()
                     }
                     .fontWeight(.semibold)
-                    .foregroundColor(Theme.primary)
-                    .disabled(isLoading)
+                    .foregroundColor(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Theme.gray3 : Theme.primary)
+                    .disabled(isLoading || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 }
             }
             .onAppear {
@@ -171,107 +166,56 @@ struct RecordMetadataInputView: View {
         }
     }
     
-    // MARK: - Comment Section
-    private var commentSection: some View {
+    // MARK: - Title Section
+    private var titleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            Text("コメント")
-                .font(.headline)
-                .fontWeight(.semibold)
-                .foregroundColor(Theme.text)
+            HStack {
+                Text("タイトル")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                Text("*")
+                    .font(.headline)
+                    .foregroundColor(Theme.error)
+            }
             
             VStack(alignment: .leading, spacing: 8) {
-                TextField("この記録について説明を追加...", text: $comment, axis: .vertical)
+                TextField("記録のタイトルを入力してください", text: $title, axis: .vertical)
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.body)
-                    .lineLimit(3, reservesSpace: true)
+                    .lineLimit(2, reservesSpace: true)
                     .padding(12)
                     .background(
                         RoundedRectangle(cornerRadius: 8)
                             .fill(Theme.gray1)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .stroke(Theme.gray3, lineWidth: 1)
+                                    .stroke(title.isEmpty ? Theme.error.opacity(0.3) : Theme.gray3, lineWidth: 1)
                             )
                     )
                 
-                Text("\(comment.count)/500")
-                    .font(.caption2)
-                    .foregroundColor(comment.count > 450 ? Theme.error : Theme.gray4)
-                    .frame(maxWidth: .infinity, alignment: .trailing)
-            }
-        }
-    }
-    
-    // MARK: - Folder Section
-    private var folderSection: some View {
-        VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("フォルダ")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Theme.text)
-                
-                Spacer()
-                
-                Button(action: { showingFolderCreation = true }) {
-                    HStack(spacing: 4) {
-                        Image(systemName: "plus.circle.fill")
-                            .font(.caption)
-                        Text("新規作成")
-                            .font(.caption)
+                HStack {
+                    if title.isEmpty {
+                        Text("タイトルは必須項目です")
+                            .font(.caption2)
+                            .foregroundColor(Theme.error)
+                    } else {
+                        Text("入力完了")
+                            .font(.caption2)
+                            .foregroundColor(Theme.primary)
                     }
-                    .foregroundColor(Theme.primary)
+                    
+                    Spacer()
+                    
+                    Text("\(title.count)/100")
+                        .font(.caption2)
+                        .foregroundColor(title.count > 80 ? Theme.error : Theme.gray4)
                 }
             }
-            
-            if availableFolders.isEmpty {
-                emptyFolderState
-            } else {
-                folderSelectionGrid
-            }
         }
     }
     
-    private var emptyFolderState: some View {
-        VStack(spacing: 12) {
-            Image(systemName: "folder.badge.plus")
-                .font(.title)
-                .foregroundColor(Theme.gray4)
-            
-            Text("フォルダがありません")
-                .font(.subheadline)
-                .foregroundColor(Theme.gray5)
-            
-            Button("最初のフォルダを作成") {
-                showingFolderCreation = true
-            }
-            .font(.subheadline)
-            .foregroundColor(Theme.primary)
-        }
-        .frame(maxWidth: .infinity)
-        .padding(.vertical, 24)
-        .background(Theme.gray1.opacity(0.5))
-        .cornerRadius(12)
-    }
-    
-    private var folderSelectionGrid: some View {
-        LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 8), count: 2), spacing: 8) {
-            // 「なし」オプション
-            FolderSelectionCard(
-                folder: nil,
-                isSelected: selectedFolder == nil,
-                onTap: { selectedFolder = nil }
-            )
-            
-            ForEach(availableFolders, id: \.id) { folder in
-                FolderSelectionCard(
-                    folder: folder,
-                    isSelected: selectedFolder?.id == folder.id,
-                    onTap: { selectedFolder = folder }
-                )
-            }
-        }
-    }
     
     // MARK: - Tag Section
     private var tagSection: some View {
@@ -284,7 +228,7 @@ struct RecordMetadataInputView: View {
                 
                 Spacer()
                 
-                Text("\(selectedTags.count) 個選択")
+                Text(selectedTag != nil ? "1 個選択" : "未選択")
                     .font(.caption)
                     .foregroundColor(Theme.gray5)
             }
@@ -348,19 +292,15 @@ struct RecordMetadataInputView: View {
     private var tagSelectionArea: some View {
         VStack(alignment: .leading, spacing: 8) {
             // 選択されたタグ
-            if !selectedTags.isEmpty {
+            if let selectedTag = selectedTag {
                 VStack(alignment: .leading, spacing: 8) {
                     Text("選択中のタグ")
                         .font(.subheadline)
                         .fontWeight(.medium)
                         .foregroundColor(Theme.text)
                     
-                    FlowLayout(spacing: 8) {
-                        ForEach(Array(selectedTags), id: \.id) { tag in
-                            SelectedTagChip(tag: tag) {
-                                selectedTags.remove(tag)
-                            }
-                        }
+                    SelectedTagChip(tag: selectedTag) {
+                        self.selectedTag = nil
                     }
                 }
                 
@@ -375,9 +315,9 @@ struct RecordMetadataInputView: View {
                     .foregroundColor(Theme.text)
                 
                 FlowLayout(spacing: 8) {
-                    ForEach(availableTags.filter { !selectedTags.contains($0) }, id: \.id) { tag in
+                    ForEach(availableTags.filter { $0.id != selectedTag?.id }, id: \.id) { tag in
                         AvailableTagChip(tag: tag) {
-                            selectedTags.insert(tag)
+                            selectedTag = tag
                         }
                     }
                 }
@@ -423,10 +363,9 @@ struct RecordMetadataInputView: View {
     private func loadInitialData() {
         Task {
             do {
-                // フォルダとタグのデータを読み込み（実際のUseCaseを使用）
+                // タグのデータを読み込み（実際のUseCaseを使用）
                 // 現在は仮のデータを使用
                 await MainActor.run {
-                    self.availableFolders = Folder.defaultFolders
                     self.availableTags = [
                         Tag(id: UUID(), name: "筋トレ", color: "#F4A261", usageCount: 5),
                         Tag(id: UUID(), name: "カラオケ", color: "#67B3A3", usageCount: 3),
@@ -454,7 +393,7 @@ struct RecordMetadataInputView: View {
         )
         
         availableTags.append(newTag)
-        selectedTags.insert(newTag)
+        selectedTag = newTag
         newTagName = ""
         
         // 触覚フィードバック
@@ -465,55 +404,35 @@ struct RecordMetadataInputView: View {
     private func saveRecord() {
         isLoading = true
         
-        let trimmedComment = comment.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
         let metadata = RecordMetadata(
-            comment: trimmedComment.isEmpty ? nil : trimmedComment,
-            tags: Array(selectedTags), // SetをArrayに変換
-            folderId: selectedFolder?.id // FolderのIDを取得
+            title: trimmedTitle,
+            tags: selectedTag != nil ? [selectedTag!] : [] // 単一タグまたは空配列
         )
         
-        // 少し遅延を追加してリアルな保存感を演出
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.5) {
-            isLoading = false
-            onSave(metadata)
-            dismiss()
+        // ViewModelで実際の保存処理を開始
+        onSave(metadata)
+        
+        // ViewModelの保存完了を監視
+        Task {
+            // ViewModelのsavedCompletedがtrueになるまで待機
+            while !viewModel.savedCompleted && viewModel.errorMessage == nil {
+                try? await Task.sleep(nanoseconds: 100_000_000) // 0.1秒ごとにチェック
+            }
+            
+            await MainActor.run {
+                isLoading = false
+                // 保存完了時は画面を閉じる（RecordingViewがホームタブに遷移処理を行う）
+                if viewModel.savedCompleted {
+                    dismiss()
+                }
+            }
         }
     }
 }
 
 // MARK: - Supporting Views
 
-struct FolderSelectionCard: View {
-    let folder: Folder?
-    let isSelected: Bool
-    let onTap: () -> Void
-    
-    var body: some View {
-        Button(action: onTap) {
-            VStack(spacing: 8) {
-                Image(systemName: folder == nil ? "tray" : "folder.fill")
-                    .font(.title2)
-                    .foregroundColor(isSelected ? .white : (folder == nil ? Theme.gray4 : Color(hex: folder!.color)))
-                
-                Text(folder?.name ?? "なし")
-                    .font(.caption)
-                    .fontWeight(.medium)
-                    .foregroundColor(isSelected ? .white : Theme.text)
-            }
-            .frame(maxWidth: .infinity)
-            .padding(.vertical, 16)
-            .background(
-                RoundedRectangle(cornerRadius: 8)
-                    .fill(isSelected ? Theme.primary : Theme.gray1)
-                    .overlay(
-                        RoundedRectangle(cornerRadius: 8)
-                            .stroke(isSelected ? Theme.primary : Theme.gray3, lineWidth: isSelected ? 2 : 1)
-                    )
-            )
-        }
-        .buttonStyle(PlainButtonStyle())
-    }
-}
 
 struct SelectedTagChip: View {
     let tag: Tag
@@ -621,7 +540,6 @@ struct FlowLayout: Layout {
 
 // MARK: - Record Metadata Model
 struct RecordMetadata {
-    let comment: String?
+    let title: String
     let tags: [Tag]
-    let folderId: UUID?
 }

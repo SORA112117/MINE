@@ -26,9 +26,6 @@ class DIContainer: ObservableObject {
         )
     }()
     
-    lazy var folderRepository: FolderRepository = {
-        FolderRepository(coreDataStack: coreDataStack)
-    }()
     
     lazy var tagRepository: TagRepository = {
         TagRepository(coreDataStack: coreDataStack)
@@ -78,9 +75,6 @@ class DIContainer: ObservableObject {
         )
     }()
     
-    lazy var manageFoldersUseCase: ManageFoldersUseCase = {
-        ManageFoldersUseCase(folderRepository: folderRepository)
-    }()
     
     lazy var manageTagsUseCase: ManageTagsUseCase = {
         ManageTagsUseCase(tagRepository: tagRepository)
@@ -95,7 +89,6 @@ class DIContainer: ObservableObject {
         RecordsViewModel(
             getRecordsUseCase: getRecordsUseCase,
             deleteRecordUseCase: deleteRecordUseCase,
-            manageFoldersUseCase: manageFoldersUseCase,
             manageTagsUseCase: manageTagsUseCase
         )
     }()
@@ -137,7 +130,6 @@ class DIContainer: ObservableObject {
     func makeRecordDetailViewModel(record: Record) -> RecordDetailViewModel {
         RecordDetailViewModel(
             record: record,
-            manageFoldersUseCase: manageFoldersUseCase,
             updateRecordUseCase: updateRecordUseCase,
             manageTagsUseCase: manageTagsUseCase
         )

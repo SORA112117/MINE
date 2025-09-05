@@ -25,6 +25,7 @@ class RecordingViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var recordingCompleted = false
+    @Published var savedCompleted = false  // 保存完了フラグ
     @Published var showVideoEditor = false
     @Published var recordedVideoURL: URL?
     @Published var currentRecordingTime: TimeInterval = 0  // 録画時間を直接管理
@@ -402,9 +403,8 @@ class RecordingViewModel: ObservableObject {
                     type: recordType,
                     fileURL: url,
                     duration: duration,
-                    comment: nil,
-                    tags: [],
-                    folderId: nil
+                    title: "新しい記録",
+                    tags: []
                 )
                 
                 // 成功メッセージを表示
@@ -441,17 +441,12 @@ class RecordingViewModel: ObservableObject {
                     type: recordType,
                     fileURL: url,
                     duration: duration,
-                    comment: recordData.comment?.isEmpty == false ? recordData.comment : nil,
-                    tags: recordData.tags,
-                    folderId: recordData.folderId
+                    title: recordData.title,
+                    tags: recordData.tags
                 )
                 
-                // 成功メッセージを表示
-                showSuccessMessage = true
-                
-                // 1.5秒後に画面を閉じる（メタデータ入力後は少し早めに）
-                try await Task.sleep(nanoseconds: 1_500_000_000)
-                recordingCompleted = true
+                // 保存完了を通知
+                savedCompleted = true
                 
             } catch {
                 errorMessage = "保存に失敗しました: \(error.localizedDescription)"
@@ -637,6 +632,7 @@ class RecordingViewModel: ObservableObject {
         
         // 状態をリセット
         recordingCompleted = false
+        savedCompleted = false
         isProcessing = false
     }
     

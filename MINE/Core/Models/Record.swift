@@ -33,9 +33,8 @@ struct Record: Identifiable, Codable {
     let duration: TimeInterval?
     let fileURL: URL
     let thumbnailURL: URL?
-    let comment: String?
+    let title: String
     let tags: Set<Tag>
-    let folderId: UUID?
     let templateId: UUID?
     
     init(
@@ -46,9 +45,8 @@ struct Record: Identifiable, Codable {
         duration: TimeInterval? = nil,
         fileURL: URL,
         thumbnailURL: URL? = nil,
-        comment: String? = nil,
+        title: String,
         tags: Set<Tag> = [],
-        folderId: UUID? = nil,
         templateId: UUID? = nil
     ) {
         self.id = id
@@ -58,9 +56,8 @@ struct Record: Identifiable, Codable {
         self.duration = duration
         self.fileURL = fileURL
         self.thumbnailURL = thumbnailURL
-        self.comment = comment
+        self.title = title
         self.tags = tags
-        self.folderId = folderId
         self.templateId = templateId
     }
     
@@ -109,7 +106,7 @@ extension Record {
             self.thumbnailURL = nil
         }
         
-        self.comment = entity.comment
+        self.title = entity.comment ?? ""
         
         // タグの変換
         if let tagEntities = entity.tags as? Set<TagEntity> {
@@ -118,8 +115,6 @@ extension Record {
             self.tags = []
         }
         
-        // フォルダIDの設定 - リレーションから取得
-        self.folderId = entity.folder?.id
         self.templateId = entity.templateId
     }
     
@@ -133,18 +128,9 @@ extension Record {
         entity.duration = duration ?? 0
         entity.fileURL = fileURL.absoluteString
         entity.thumbnailURL = thumbnailURL?.absoluteString
-        entity.comment = comment
+        entity.comment = title
         entity.templateId = templateId
         
-        // フォルダの設定 - リレーションを使用
-        if let folderId = folderId {
-            // FolderEntityを検索して設定
-            let folderRequest: NSFetchRequest<FolderEntity> = FolderEntity.fetchRequest()
-            folderRequest.predicate = NSPredicate(format: "id == %@", folderId as CVarArg)
-            if let folder = try? context.fetch(folderRequest).first {
-                entity.folder = folder
-            }
-        }
         
         // タグの設定 - リレーションを使用
         if !tags.isEmpty {

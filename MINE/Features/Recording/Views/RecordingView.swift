@@ -33,10 +33,6 @@ struct RecordingView: View {
                 errorOverlay(message: errorMessage)
             }
             
-            // 成功メッセージ
-            if viewModel.showSuccessMessage {
-                successOverlay
-            }
             
             // 処理中インジケーター
             if viewModel.isProcessing {
@@ -52,13 +48,18 @@ struct RecordingView: View {
         .onDisappear {
             viewModel.stopCameraSession()
         }
-        // VideoEditorは直接表示せず、メタデータ入力画面から表示
+        // 撮影・録音完了時にメタデータ入力画面を表示
         .onChange(of: viewModel.recordingCompleted) { completed in
             if completed {
-                // 録画完了時はメタデータ入力画面を表示
-                // 処理中フラグをクリア（念のため）
-                viewModel.isProcessing = false
                 showingMetadataInput = true
+            }
+        }
+        // 保存完了時にホームタブに戻る
+        .onChange(of: viewModel.savedCompleted) { saved in
+            if saved {
+                viewModel.isProcessing = false
+                showingMetadataInput = false
+                appCoordinator.showHome()
             }
         }
         // VideoEditorはメタデータ入力画面から表示するように変更
@@ -71,7 +72,7 @@ struct RecordingView: View {
                     onSave: { recordData in
                         // メタデータ付きで記録を保存
                         viewModel.saveRecordingWithMetadata(recordData: recordData)
-                        dismiss()
+                        // dismissはRecordMetadataInputView側で処理
                     }
                 )
             }
