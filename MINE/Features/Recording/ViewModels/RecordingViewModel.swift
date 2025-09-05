@@ -12,6 +12,9 @@ class RecordingViewModel: ObservableObject {
     @Published var errorMessage: String?
     @Published var showSuccessMessage = false
     @Published var recordingCompleted = false
+    @Published var showVideoEditor = false
+    @Published var recordedVideoURL: URL?
+    @Published var currentRecordingTime: TimeInterval = 0  // 録画時間を直接管理
     
     // 遅延初期化に変更してクラッシュを防ぐ
     @Published var cameraManager: CameraManager?
@@ -102,6 +105,14 @@ class RecordingViewModel: ObservableObject {
             .compactMap { $0 }
             .sink { [weak self] error in
                 self?.errorMessage = error.localizedDescription
+            }
+            .store(in: &cancellables)
+        
+        // 録画時間を監視（重要：これによりUIが更新される）
+        cameraManager.$recordingTime
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] time in
+                self?.currentRecordingTime = time
             }
             .store(in: &cancellables)
     }
@@ -297,12 +308,25 @@ class RecordingViewModel: ObservableObject {
     // MARK: - Recording Completion
     private func handleRecordingCompleted(url: URL) {
         lastRecordedURL = url
+        recordedVideoURL = url  // 編集画面用にURLを保存
+        
+        // 動画の場合は編集画面を表示、その他は直接保存
+        if recordType == .video {
+            showVideoEditor = true
+        } else {
+            // オーディオや画像は直接保存
+            saveRecording(url: url)
+        }
+    }
+    
+    // 編集後の保存処理
+    func saveRecording(url: URL) {
         isProcessing = true
         
         Task {
             do {
                 // Core Dataに保存（UseCaseが内部でサムネイル生成を行う）
-                let duration = recordType == .video ? (cameraManager?.recordingTime ?? 0) : (audioRecorderService?.recordingTime ?? 0)
+                let duration = recordType == .video ? currentRecordingTime : (audioRecorderService?.recordingTime ?? 0)
                 let _ = try await createRecordUseCase.execute(
                     type: recordType,
                     fileURL: url,
@@ -314,7 +338,6 @@ class RecordingViewModel: ObservableObject {
                 
                 // 成功メッセージを表示
                 showSuccessMessage = true
-                recordingCompleted = true
                 
                 // 2秒後に画面を閉じる
                 try await Task.sleep(nanoseconds: 2_000_000_000)
@@ -396,10 +419,10 @@ class RecordingViewModel: ObservableObject {
     var formattedRecordingTime: String {
         switch recordType {
         case .video:
-            let totalSeconds = Int(recordingTime)
+            let totalSeconds = Int(currentRecordingTime)
             let minutes = totalSeconds / 60
             let seconds = totalSeconds % 60
-            let milliseconds = Int((recordingTime.truncatingRemainder(dividingBy: 1)) * 10)
+            let milliseconds = Int((currentRecordingTime.truncatingRemainder(dividingBy: 1)) * 10)
             return String(format: "%02d:%02d.%d", minutes, seconds, milliseconds)
         case .audio:
             return audioRecorderService?.formattedRecordingTime ?? "00:00.0"

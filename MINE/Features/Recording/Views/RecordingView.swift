@@ -5,6 +5,7 @@ struct RecordingView: View {
     @StateObject var viewModel: RecordingViewModel
     @EnvironmentObject var appCoordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
+    @State private var showingVideoEditor = false
     
     var body: some View {
         ZStack {
@@ -44,9 +45,21 @@ struct RecordingView: View {
         .onDisappear {
             viewModel.stopCameraSession()
         }
+        .onChange(of: viewModel.showVideoEditor) { show in
+            if show {
+                showingVideoEditor = true
+            }
+        }
         .onChange(of: viewModel.recordingCompleted) { completed in
             if completed {
                 dismiss()
+            }
+        }
+        .sheet(isPresented: $showingVideoEditor) {
+            if let videoURL = viewModel.recordedVideoURL {
+                VideoEditorView(videoURL: videoURL) { editedURL in
+                    viewModel.saveRecording(url: editedURL)
+                }
             }
         }
     }
@@ -123,40 +136,43 @@ struct RecordingView: View {
     
     // MARK: - Recording Time Display
     private var recordingTimeDisplay: some View {
-        HStack(spacing: 6) {
-            Circle()
-                .fill(Color.red)
-                .frame(width: 8, height: 8)
-                .overlay(
-                    Circle()
-                        .stroke(Color.red.opacity(0.3), lineWidth: 3)
-                        .scaleEffect(viewModel.isRecording ? 2 : 1)
-                        .opacity(viewModel.isRecording ? 0 : 1)
-                        .animation(
-                            Animation.easeOut(duration: 1)
-                                .repeatForever(autoreverses: false),
-                            value: viewModel.isRecording
-                        )
-                )
+        VStack(spacing: 4) {
+            // 録画時間表示
+            HStack(spacing: 6) {
+                Circle()
+                    .fill(Color.red)
+                    .frame(width: 8, height: 8)
+                    .overlay(
+                        Circle()
+                            .stroke(Color.red.opacity(0.3), lineWidth: 3)
+                            .scaleEffect(viewModel.isRecording ? 2 : 1)
+                            .opacity(viewModel.isRecording ? 0 : 1)
+                            .animation(
+                                Animation.easeOut(duration: 1)
+                                    .repeatForever(autoreverses: false),
+                                value: viewModel.isRecording
+                            )
+                    )
+                
+                Text(viewModel.formattedRecordingTime)
+                    .font(.system(size: 18, weight: .semibold, design: .monospaced))
+                    .foregroundColor(.white)
+            }
             
-            Text(viewModel.formattedRecordingTime)
-                .font(.system(size: 16, weight: .medium, design: .monospaced))
-                .foregroundColor(.white)
-            
-            Text("/")
-                .foregroundColor(.white.opacity(0.5))
-            
-            Text(viewModel.formattedMaxTime)
-                .font(.system(size: 14, weight: .regular, design: .monospaced))
-                .foregroundColor(.white.opacity(0.7))
+            // プレミアムプラン案内（フリープランの場合）
+            if !KeychainService.shared.isProVersion {
+                Text("5秒まで / プレミアムでより長く録画")
+                    .font(.system(size: 10))
+                    .foregroundColor(.white.opacity(0.8))
+            }
         }
-        .padding(.horizontal, 16)
+        .padding(.horizontal, 20)
         .padding(.vertical, 8)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 20)
                 .fill(Color.black.opacity(0.6))
                 .overlay(
-                    Capsule()
+                    RoundedRectangle(cornerRadius: 20)
                         .stroke(Color.white.opacity(0.2), lineWidth: 1)
                 )
         )
@@ -164,56 +180,106 @@ struct RecordingView: View {
     
     // MARK: - Recording Controls
     private var recordingControls: some View {
-        HStack(spacing: 50) {
-            // フラッシュボタン
-            Button(action: {}) {
-                Image(systemName: "bolt.slash.fill")
-                    .font(.system(size: 22))
-                    .foregroundColor(.white)
-                    .frame(width: 50, height: 50)
-                    .background(Circle().fill(Color.white.opacity(0.2)))
-            }
-            .opacity(0.3)
-            .disabled(true)
-            
-            // 録画ボタン
-            Button(action: {
-                if viewModel.isRecording {
-                    viewModel.stopRecording()
-                } else {
-                    viewModel.startRecording()
-                }
-            }) {
-                ZStack {
-                    Circle()
-                        .stroke(Color.white, lineWidth: 4)
-                        .frame(width: 85, height: 85)
-                    
+        VStack(spacing: 30) {
+            // 中央の録画ボタン（iPhone純正風）
+            HStack(spacing: 60) {
+                // 空のスペーサー（左側）
+                Color.clear
+                    .frame(width: 60, height: 60)
+                
+                // 録画ボタン
+                Button(action: {
                     if viewModel.isRecording {
-                        RoundedRectangle(cornerRadius: 8)
-                            .fill(Color.red)
-                            .frame(width: 35, height: 35)
+                        viewModel.stopRecording()
                     } else {
+                        viewModel.startRecording()
+                    }
+                }) {
+                    ZStack {
+                        // 外側の白い円
                         Circle()
-                            .fill(Color.red)
-                            .frame(width: 70, height: 70)
+                            .stroke(Color.white, lineWidth: 5)
+                            .frame(width: 75, height: 75)
+                        
+                        // 内側の赤い部分
+                        if viewModel.isRecording {
+                            // 録画中は角丸の正方形
+                            RoundedRectangle(cornerRadius: 5)
+                                .fill(Color.red)
+                                .frame(width: 30, height: 30)
+                                .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
+                        } else {
+                            // 待機中は円
+                            Circle()
+                                .fill(Color.red)
+                                .frame(width: 60, height: 60)
+                                .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
+                        }
                     }
                 }
+                .disabled(viewModel.isProcessing)
+                .scaleEffect(viewModel.isRecording ? 1.1 : 1.0)
+                .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
+                
+                // カメラ切り替えボタン
+                Button(action: {}) {
+                    Image(systemName: "camera.rotate")
+                        .font(.system(size: 24))
+                        .foregroundColor(.white)
+                        .frame(width: 60, height: 60)
+                        .background(
+                            Circle()
+                                .fill(Color.black.opacity(0.3))
+                                .overlay(
+                                    Circle()
+                                        .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                                )
+                        )
+                }
+                .opacity(0.5)
+                .disabled(true)
             }
-            .disabled(viewModel.isProcessing)
             
-            // カメラ切り替えボタン
-            Button(action: {}) {
-                Image(systemName: "camera.rotate")
-                    .font(.system(size: 22))
-                    .foregroundColor(.white)
-                    .frame(width: 50, height: 50)
-                    .background(Circle().fill(Color.white.opacity(0.2)))
+            // 下部のオプションボタン
+            HStack(spacing: 40) {
+                // フラッシュボタン
+                Button(action: {}) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "bolt.slash")
+                            .font(.system(size: 20))
+                        Text("オフ")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+                }
+                .disabled(true)
+                
+                // エフェクトボタン（将来実装）
+                Button(action: {}) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "wand.and.stars")
+                            .font(.system(size: 20))
+                        Text("エフェクト")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+                }
+                .disabled(true)
+                
+                // 設定ボタン（将来実装）
+                Button(action: {}) {
+                    VStack(spacing: 4) {
+                        Image(systemName: "gearshape")
+                            .font(.system(size: 20))
+                        Text("設定")
+                            .font(.caption2)
+                    }
+                    .foregroundColor(.white.opacity(0.5))
+                }
+                .disabled(true)
             }
-            .opacity(0.3)
-            .disabled(true)
         }
-        .padding(.bottom, 50)
+        .padding(.bottom, 30)
     }
     
     // MARK: - Placeholder Recording View
