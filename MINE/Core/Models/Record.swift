@@ -118,6 +118,7 @@ extension Record {
             self.tags = []
         }
         
+        // フォルダIDの設定 - リレーションから取得
         self.folderId = entity.folder?.id
         self.templateId = entity.templateId
     }
@@ -135,8 +136,36 @@ extension Record {
         entity.comment = comment
         entity.templateId = templateId
         
-        // タグの設定（別途処理が必要）
-        // entity.tags = ...
+        // フォルダの設定 - リレーションを使用
+        if let folderId = folderId {
+            // FolderEntityを検索して設定
+            let folderRequest: NSFetchRequest<FolderEntity> = FolderEntity.fetchRequest()
+            folderRequest.predicate = NSPredicate(format: "id == %@", folderId as CVarArg)
+            if let folder = try? context.fetch(folderRequest).first {
+                entity.folder = folder
+            }
+        }
+        
+        // タグの設定 - リレーションを使用
+        if !tags.isEmpty {
+            let tagEntities = tags.compactMap { tag -> TagEntity? in
+                let tagRequest: NSFetchRequest<TagEntity> = TagEntity.fetchRequest()
+                tagRequest.predicate = NSPredicate(format: "id == %@", tag.id as CVarArg)
+                
+                if let existingTag = try? context.fetch(tagRequest).first {
+                    return existingTag
+                } else {
+                    // タグが存在しない場合は作成
+                    let newTag = TagEntity(context: context)
+                    newTag.id = tag.id
+                    newTag.name = tag.name
+                    newTag.color = tag.color
+                    newTag.usageCount = Int32(tag.usageCount)
+                    return newTag
+                }
+            }
+            entity.tags = NSSet(array: tagEntities)
+        }
         
         return entity
     }

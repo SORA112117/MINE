@@ -86,6 +86,17 @@ class LocalDataSource {
             predicates.append(NSPredicate(format: "comment CONTAINS[cd] %@", searchText))
         }
         
+        // フォルダIDフィルタリング
+        if let folderId = filter.folderId {
+            predicates.append(NSPredicate(format: "folder.id == %@", folderId as CVarArg))
+        }
+        
+        // タグフィルタリング
+        if let tags = filter.tags, !tags.isEmpty {
+            let tagIds = tags.map { $0.id }
+            predicates.append(NSPredicate(format: "ANY tags.id IN %@", tagIds))
+        }
+        
         if !predicates.isEmpty {
             request.predicate = NSCompoundPredicate(andPredicateWithSubpredicates: predicates)
         }

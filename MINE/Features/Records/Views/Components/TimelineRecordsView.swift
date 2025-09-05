@@ -80,20 +80,52 @@ struct TimelineRecordsView: View {
     private var timelineContent: some View {
         ScrollView {
             LazyVStack(spacing: 16) {
+                // 時系列でグループ化されたセクション
                 ForEach(groupedRecords.keys.sorted(by: >), id: \.self) { period in
                     TimelinePeriodSection(
                         period: period,
                         records: groupedRecords[period] ?? [],
                         timeScale: selectedTimeScale,
                         comparisonMode: comparisonMode,
+                        folders: viewModel.folders,
                         onRecordTap: onRecordTap
                     )
+                }
+                
+                // フォルダセクション（オプション）
+                if !groupedRecordsByFolder.isEmpty && selectedTimeScale == .month {
+                    folderSections
                 }
             }
             .padding()
         }
         .refreshable {
             await viewModel.loadDataAsync()
+        }
+    }
+    
+    // フォルダ別セクション表示
+    private var folderSections: some View {
+        VStack(spacing: 16) {
+            // セクションタイトル
+            HStack {
+                Text("フォルダ別表示")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                Spacer()
+            }
+            .padding(.horizontal)
+            .padding(.top, 20)
+            
+            // フォルダごとのセクション
+            ForEach(groupedRecordsByFolder.keys.sorted(), id: \.self) { folderName in
+                FolderSection(
+                    folderName: folderName,
+                    records: groupedRecordsByFolder[folderName] ?? [],
+                    onRecordTap: onRecordTap
+                )
+            }
         }
     }
     
@@ -108,6 +140,19 @@ struct TimelineRecordsView: View {
                 return calendar.dateInterval(of: .weekOfYear, for: record.createdAt)?.start ?? record.createdAt
             case .month:
                 return calendar.dateInterval(of: .month, for: record.createdAt)?.start ?? record.createdAt
+            }
+        }
+    }
+    
+    // フォルダごとのグループ化
+    private var groupedRecordsByFolder: [String: [Record]] {
+        return Dictionary(grouping: viewModel.filteredRecords) { record in
+            // フォルダIDからフォルダ名を取得
+            if let folderId = record.folderId,
+               let folder = viewModel.folders.first(where: { $0.id == folderId }) {
+                return folder.name
+            } else {
+                return "未分類"
             }
         }
     }
@@ -148,6 +193,7 @@ struct TimelinePeriodSection: View {
     let records: [Record]
     let timeScale: TimeScale
     let comparisonMode: ComparisonMode
+    let folders: [Folder]
     let onRecordTap: (Record) -> Void
     
     @State private var selectedRecordIndex = 0
@@ -412,5 +458,54 @@ enum ComparisonMode: String, CaseIterable {
         case .overlay: return "square.stack"
         case .carousel: return "arrow.left.arrow.right"
         }
+    }
+}
+
+// MARK: - Folder Section
+struct FolderSection: View {
+    let folderName: String
+    let records: [Record]
+    let onRecordTap: (Record) -> Void
+    
+    var body: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // フォルダセクションヘッダー
+            HStack {
+                Image(systemName: "folder.fill")
+                    .font(.title3)
+                    .foregroundColor(Theme.primary)
+                
+                Text(folderName)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                Spacer()
+                
+                Text("\(records.count)件")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.gray5)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            
+            // レコードリスト
+            LazyVStack(spacing: 8) {
+                ForEach(records.sorted { $0.createdAt > $1.createdAt }, id: \.id) { record in
+                    TimelineRecordCard(
+                        record: record,
+                        comparisonMode: .sideBySide,
+                        onTap: { onRecordTap(record) }
+                    )
+                    .frame(maxWidth: .infinity)
+                }
+            }
+            .padding(.horizontal)
+            .padding(.bottom)
+        }
+        .background(Color.white)
+        .cornerRadius(Constants.UI.cornerRadius)
+        .shadow(color: Theme.shadowColor, radius: 2, x: 0, y: 1)
+        .padding(.horizontal)
     }
 }

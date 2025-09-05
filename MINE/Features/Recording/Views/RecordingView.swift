@@ -6,6 +6,7 @@ struct RecordingView: View {
     @EnvironmentObject var appCoordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
     @State private var showingVideoEditor = false
+    @State private var showingMetadataInput = false
     
     var body: some View {
         ZStack {
@@ -16,8 +17,14 @@ struct RecordingView: View {
             if viewModel.recordType == .video {
                 // ビデオ録画UI
                 videoRecordingView
+            } else if viewModel.recordType == .audio {
+                // オーディオ録音UI
+                audioRecordingView
+            } else if viewModel.recordType == .image {
+                // 画像撮影UI
+                imageRecordingView
             } else {
-                // オーディオ/写真UI（プレースホルダー）
+                // プレースホルダーUI
                 placeholderRecordingView
             }
             
@@ -45,21 +52,28 @@ struct RecordingView: View {
         .onDisappear {
             viewModel.stopCameraSession()
         }
-        .onChange(of: viewModel.showVideoEditor) { show in
-            if show {
-                showingVideoEditor = true
-            }
-        }
+        // VideoEditorは直接表示せず、メタデータ入力画面から表示
         .onChange(of: viewModel.recordingCompleted) { completed in
             if completed {
-                dismiss()
+                // 録画完了時はメタデータ入力画面を表示
+                // 処理中フラグをクリア（念のため）
+                viewModel.isProcessing = false
+                showingMetadataInput = true
             }
         }
-        .sheet(isPresented: $showingVideoEditor) {
-            if let videoURL = viewModel.recordedVideoURL {
-                VideoEditorView(videoURL: videoURL) { editedURL in
-                    viewModel.saveRecording(url: editedURL)
-                }
+        // VideoEditorはメタデータ入力画面から表示するように変更
+        .sheet(isPresented: $showingMetadataInput) {
+            if let recordURL = viewModel.recordedVideoURL {
+                RecordMetadataInputView(
+                    viewModel: viewModel,
+                    recordURL: recordURL,
+                    recordType: viewModel.recordType,
+                    onSave: { recordData in
+                        // メタデータ付きで記録を保存
+                        viewModel.saveRecordingWithMetadata(recordData: recordData)
+                        dismiss()
+                    }
+                )
             }
         }
         .alert("録画時間の上限に達しました", isPresented: $viewModel.showRecordingLimitDialog) {
@@ -469,5 +483,191 @@ struct RecordingView: View {
             }
         }
         .padding()
+    }
+    
+    // MARK: - Audio Recording View
+    private var audioRecordingView: some View {
+        VStack(spacing: 40) {
+            Spacer()
+            
+            // 音声波形アニメーション
+            audioVisualization
+            
+            // 録音時間表示
+            VStack(spacing: 8) {
+                Text(viewModel.formattedRecordingTime)
+                    .font(.system(size: 48, weight: .light, design: .monospaced))
+                    .foregroundColor(.white)
+                
+                // プレミアムプラン案内（フリープランの場合）
+                if !KeychainService.shared.isProVersion {
+                    Text("90秒まで / プレミアムでより長く録音")
+                        .font(.caption)
+                        .foregroundColor(.white.opacity(0.7))
+                }
+            }
+            
+            Spacer()
+            
+            // 録音コントロール
+            VStack(spacing: 30) {
+                // 録音ボタン
+                Button(action: {
+                    // ハプティックフィードバック
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                    impactFeedback.impactOccurred()
+                    
+                    if viewModel.isRecording {
+                        viewModel.stopRecording()
+                    } else {
+                        viewModel.startRecording()
+                    }
+                }) {
+                    ZStack {
+                        // 外側の円
+                        Circle()
+                            .stroke(Color.white, lineWidth: 4)
+                            .frame(width: 80, height: 80)
+                        
+                        // 内側のマイクアイコンまたは停止ボタン
+                        if viewModel.isRecording {
+                            RoundedRectangle(cornerRadius: 8)
+                                .fill(Color.red)
+                                .frame(width: 32, height: 32)
+                        } else {
+                            Image(systemName: "mic.fill")
+                                .font(.system(size: 28))
+                                .foregroundColor(.white)
+                        }
+                    }
+                }
+                .disabled(viewModel.isProcessing || viewModel.showPermissionDenied)
+                .scaleEffect(viewModel.isRecording ? 1.1 : 1.0)
+                .animation(.easeInOut(duration: 0.2), value: viewModel.isRecording)
+                
+                // キャンセルボタン
+                Button(action: {
+                    if viewModel.isRecording {
+                        viewModel.stopRecording()
+                    }
+                    dismiss()
+                }) {
+                    Text("キャンセル")
+                        .font(.headline)
+                        .foregroundColor(.white)
+                        .padding(.horizontal, 32)
+                        .padding(.vertical, 12)
+                        .background(Color.white.opacity(0.2))
+                        .cornerRadius(25)
+                }
+            }
+            
+            Spacer()
+        }
+        .onAppear {
+            // オーディオセッションの開始処理はViewModelで実行
+        }
+    }
+    
+    // MARK: - Audio Visualization
+    private var audioVisualization: some View {
+        ZStack {
+            // シンプルな録音中インジケータ - 脈動する円
+            if viewModel.isRecording {
+                Circle()
+                    .fill(Color.red.opacity(0.3))
+                    .frame(width: 150, height: 150)
+                    .scaleEffect(viewModel.isRecording ? 1.2 : 1.0)
+                    .animation(.easeInOut(duration: 1.0).repeatForever(autoreverses: true), value: viewModel.isRecording)
+                
+                Circle()
+                    .fill(Color.red.opacity(0.5))
+                    .frame(width: 100, height: 100)
+                    .scaleEffect(viewModel.isRecording ? 1.1 : 1.0)
+                    .animation(.easeInOut(duration: 0.8).repeatForever(autoreverses: true), value: viewModel.isRecording)
+            }
+            
+            // 中心のマイクアイコン
+            Image(systemName: viewModel.isRecording ? "mic.fill" : "mic")
+                .font(.system(size: 48))
+                .foregroundColor(.white)
+                .scaleEffect(viewModel.isRecording ? 1.1 : 1.0)
+                .animation(.easeInOut(duration: 0.3), value: viewModel.isRecording)
+        }
+        .frame(width: 150, height: 150)
+    }
+    
+    // MARK: - Image Recording View
+    private var imageRecordingView: some View {
+        ZStack {
+            // カメラプレビュー
+            if let cameraManager = viewModel.cameraManager, cameraManager.permissionGranted {
+                CameraPreviewView(cameraManager: cameraManager)
+                    .ignoresSafeArea()
+                
+                // 撮影コントロール
+                VStack {
+                    // 上部のコントロール
+                    topControls
+                    
+                    Spacer()
+                    
+                    // 撮影ボタン
+                    imageControlButtons
+                }
+            } else if viewModel.showPermissionDenied {
+                // 権限拒否画面
+                permissionDeniedView
+            } else {
+                // ローディング
+                ProgressView("カメラを準備中...")
+                    .foregroundColor(.white)
+            }
+        }
+    }
+    
+    // MARK: - Image Control Buttons
+    private var imageControlButtons: some View {
+        VStack(spacing: 30) {
+            // 撮影ボタン
+            Button(action: {
+                // 撮影フィードバック
+                let impactFeedback = UIImpactFeedbackGenerator(style: .heavy)
+                impactFeedback.impactOccurred()
+                
+                // 写真を撮影
+                viewModel.capturePhoto()
+            }) {
+                ZStack {
+                    // 外側の白い円
+                    Circle()
+                        .stroke(Color.white, lineWidth: 5)
+                        .frame(width: 75, height: 75)
+                    
+                    // 内側の円 - 処理中は小さく変化
+                    Circle()
+                        .fill(viewModel.isProcessing ? Color.gray : Color.white)
+                        .frame(width: viewModel.isProcessing ? 50 : 60, height: viewModel.isProcessing ? 50 : 60)
+                        .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
+                }
+            }
+            .disabled(viewModel.isProcessing)
+            .scaleEffect(viewModel.isProcessing ? 0.9 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: viewModel.isProcessing)
+            
+            // キャンセルボタン
+            Button(action: {
+                dismiss()
+            }) {
+                Text("キャンセル")
+                    .font(.headline)
+                    .foregroundColor(.white)
+                    .padding(.horizontal, 32)
+                    .padding(.vertical, 12)
+                    .background(Color.white.opacity(0.2))
+                    .cornerRadius(25)
+            }
+        }
+        .padding(.bottom, 30)
     }
 }

@@ -17,7 +17,7 @@ class CreateRecordUseCase {
         fileURL: URL,
         duration: TimeInterval? = nil,
         comment: String? = nil,
-        tags: Set<Tag> = [],
+        tags: [Tag] = [],
         folderId: UUID? = nil
     ) async throws -> Record {
         
@@ -33,13 +33,20 @@ class CreateRecordUseCase {
             fileURL: fileURL,
             thumbnailURL: thumbnailURL,
             comment: comment,
-            tags: tags,
+            tags: Set(tags), // 配列をSetに変換
             folderId: folderId,
             templateId: nil
         )
         
         // 保存
         try await recordRepository.save(record)
+        
+        // 記録保存完了通知を送信
+        NotificationCenter.default.post(
+            name: .recordSaved,
+            object: nil,
+            userInfo: ["record": record]
+        )
         
         return record
     }
@@ -87,6 +94,105 @@ class DeleteRecordUseCase {
         
         // データベースから削除
         try await recordRepository.delete(id)
+    }
+}
+
+// MARK: - Update Record Use Case
+class UpdateRecordUseCase {
+    private let recordRepository: RecordRepository
+    private let manageTagsUseCase: ManageTagsUseCase
+    
+    init(recordRepository: RecordRepository, manageTagsUseCase: ManageTagsUseCase) {
+        self.recordRepository = recordRepository
+        self.manageTagsUseCase = manageTagsUseCase
+    }
+    
+    func updateFolder(recordId: UUID, folderId: UUID?) async throws {
+        guard var record = try await recordRepository.fetchById(recordId) else {
+            throw UseCaseError.recordNotFound
+        }
+        
+        // Record構造体を更新（folderId変更）
+        let updatedRecord = Record(
+            id: record.id,
+            type: record.type,
+            createdAt: record.createdAt,
+            updatedAt: Date(),
+            duration: record.duration,
+            fileURL: record.fileURL,
+            thumbnailURL: record.thumbnailURL,
+            comment: record.comment,
+            tags: record.tags,
+            folderId: folderId,
+            templateId: record.templateId
+        )
+        
+        try await recordRepository.update(updatedRecord)
+    }
+    
+    func updateTags(recordId: UUID, tags: Set<Tag>) async throws {
+        guard var record = try await recordRepository.fetchById(recordId) else {
+            throw UseCaseError.recordNotFound
+        }
+        
+        let oldTags = record.tags
+        
+        // Record構造体を更新（tags変更）
+        let updatedRecord = Record(
+            id: record.id,
+            type: record.type,
+            createdAt: record.createdAt,
+            updatedAt: Date(),
+            duration: record.duration,
+            fileURL: record.fileURL,
+            thumbnailURL: record.thumbnailURL,
+            comment: record.comment,
+            tags: tags,
+            folderId: record.folderId,
+            templateId: record.templateId
+        )
+        
+        try await recordRepository.update(updatedRecord)
+        
+        // タグの使用回数を更新
+        await updateTagUsageCountsAfterChange(oldTags: oldTags, newTags: tags)
+    }
+    
+    func updateComment(recordId: UUID, comment: String?) async throws {
+        guard var record = try await recordRepository.fetchById(recordId) else {
+            throw UseCaseError.recordNotFound
+        }
+        
+        // Record構造体を更新（comment変更）
+        let updatedRecord = Record(
+            id: record.id,
+            type: record.type,
+            createdAt: record.createdAt,
+            updatedAt: Date(),
+            duration: record.duration,
+            fileURL: record.fileURL,
+            thumbnailURL: record.thumbnailURL,
+            comment: comment,
+            tags: record.tags,
+            folderId: record.folderId,
+            templateId: record.templateId
+        )
+        
+        try await recordRepository.update(updatedRecord)
+    }
+    
+    private func updateTagUsageCountsAfterChange(oldTags: Set<Tag>, newTags: Set<Tag>) async {
+        // 削除されたタグの使用回数を減らす
+        let removedTags = oldTags.subtracting(newTags)
+        for tag in removedTags {
+            try? await manageTagsUseCase.decrementTagUsage(id: tag.id)
+        }
+        
+        // 追加されたタグの使用回数を増やす
+        let addedTags = newTags.subtracting(oldTags)
+        for tag in addedTags {
+            try? await manageTagsUseCase.incrementTagUsage(id: tag.id)
+        }
     }
 }
 
@@ -142,6 +248,14 @@ class ManageTagsUseCase {
     
     func updateTagUsage(id: UUID) async throws {
         try await tagRepository.incrementUsage(id)
+    }
+    
+    func incrementTagUsage(id: UUID) async throws {
+        try await tagRepository.incrementUsage(id)
+    }
+    
+    func decrementTagUsage(id: UUID) async throws {
+        try await tagRepository.decrementUsage(id)
     }
 }
 

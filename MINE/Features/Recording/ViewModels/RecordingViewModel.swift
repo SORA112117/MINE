@@ -3,6 +3,19 @@ import AVFoundation
 import Combine
 import SwiftUI
 
+// MARK: - Recording Error
+enum RecordingError: LocalizedError {
+    case noRecordedFile
+    
+    var errorDescription: String? {
+        switch self {
+        case .noRecordedFile:
+            return "録画ファイルが見つかりません"
+        }
+    }
+}
+
+
 // MARK: - Recording ViewModel
 @MainActor
 class RecordingViewModel: ObservableObject {
@@ -137,6 +150,14 @@ class RecordingViewModel: ObservableObject {
                 if self?.recordType == .audio {
                     self?.showPermissionDenied = !granted
                 }
+            }
+            .store(in: &cancellables)
+        
+        // 録音時間を監視（UIの時間表示を更新）
+        audioRecorderService.$recordingTime
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] time in
+                self?.currentRecordingTime = time
             }
             .store(in: &cancellables)
         
@@ -316,18 +337,57 @@ class RecordingViewModel: ObservableObject {
         }
     }
     
+    // MARK: - Photo Capture
+    func capturePhoto() {
+        guard let cameraManager = cameraManager else {
+            errorMessage = "カメラサービスが初期化されていません"
+            return
+        }
+        
+        guard cameraManager.permissionGranted else {
+            errorMessage = "カメラの権限が必要です"
+            return
+        }
+        
+        isProcessing = true
+        
+        Task {
+            do {
+                // 写真を撮影してファイルに保存
+                let photoURL = try await cameraManager.capturePhoto()
+                
+                await MainActor.run {
+                    self.recordedVideoURL = photoURL // 画像URLを保存
+                    self.handlePhotoCompleted(url: photoURL)
+                }
+                
+            } catch {
+                await MainActor.run {
+                    self.errorMessage = "写真の撮影に失敗しました: \(error.localizedDescription)"
+                    self.isProcessing = false
+                }
+            }
+        }
+    }
+    
+    // 写真撮影完了処理
+    private func handlePhotoCompleted(url: URL) {
+        lastRecordedURL = url
+        recordedVideoURL = url
+        isProcessing = false
+        
+        // 写真の場合はクロッピング編集が可能なので、メタデータ入力画面を先に表示
+        recordingCompleted = true
+    }
+    
     // MARK: - Recording Completion
     private func handleRecordingCompleted(url: URL) {
         lastRecordedURL = url
         recordedVideoURL = url  // 編集画面用にURLを保存
         
-        // 動画の場合は編集画面を表示、その他は直接保存
-        if recordType == .video {
-            showVideoEditor = true
-        } else {
-            // オーディオや画像は直接保存
-            saveRecording(url: url)
-        }
+        // 全ての記録タイプでメタデータ入力画面を先に表示
+        // 編集は各メタデータ入力画面から実行可能
+        recordingCompleted = true
     }
     
     // 編集後の保存処理
@@ -362,12 +422,60 @@ class RecordingViewModel: ObservableObject {
         }
     }
     
+    // メタデータ付きで保存（新規追加）
+    func saveRecordingWithMetadata(recordData: RecordMetadata) {
+        isProcessing = true
+        
+        Task {
+            do {
+                // 録画ファイルのURLを取得
+                guard let url = recordedVideoURL else {
+                    throw RecordingError.noRecordedFile
+                }
+                
+                // 録画時間の計算
+                let duration = recordType == .video ? currentRecordingTime : (audioRecorderService?.recordingTime ?? 0)
+                
+                // Core Dataにメタデータ付きで保存
+                let _ = try await createRecordUseCase.execute(
+                    type: recordType,
+                    fileURL: url,
+                    duration: duration,
+                    comment: recordData.comment?.isEmpty == false ? recordData.comment : nil,
+                    tags: recordData.tags,
+                    folderId: recordData.folderId
+                )
+                
+                // 成功メッセージを表示
+                showSuccessMessage = true
+                
+                // 1.5秒後に画面を閉じる（メタデータ入力後は少し早めに）
+                try await Task.sleep(nanoseconds: 1_500_000_000)
+                recordingCompleted = true
+                
+            } catch {
+                errorMessage = "保存に失敗しました: \(error.localizedDescription)"
+            }
+            
+            isProcessing = false
+        }
+    }
+    
+    // デフォルト保存（キャンセル時用）
+    func saveRecording() {
+        guard let url = recordedVideoURL else {
+            errorMessage = "録画ファイルが見つかりません"
+            return
+        }
+        saveRecording(url: url)
+    }
+    
     // MARK: - 5秒制限ダイアログの選択肢
     
     /// 「このまま保存」を選択した場合
     func saveCurrentRecording() {
         showRecordingLimitDialog = false
-        stopRecording() // 録画を停止して保存処理に進む
+        stopRecording() // 録画を停止してメタデータ入力画面に進む
     }
     
     /// 「撮影し直し」を選択した場合  
@@ -389,16 +497,40 @@ class RecordingViewModel: ObservableObject {
     
     // MARK: - Camera Lifecycle
     func startCameraSession() {
-        guard isInitialized, let cameraManager = cameraManager else {
-            print("[RecordingViewModel] Camera not initialized yet, skipping session start")
+        print("[RecordingViewModel] startCameraSession called - isInitialized: \(isInitialized), recordType: \(recordType)")
+        
+        // 初期化されていない場合は非同期で初期化を待つ
+        if !isInitialized {
+            print("[RecordingViewModel] Not initialized, starting initialization...")
+            Task {
+                await initializeServicesAsync()
+                await MainActor.run {
+                    self.startCameraSession()
+                }
+            }
+            return
+        }
+        
+        guard let cameraManager = cameraManager else {
+            print("[RecordingViewModel] CameraManager is nil")
             return
         }
         
         if recordType == .video || recordType == .image {
             print("[RecordingViewModel] Starting camera session")
-            // セッション開始前に権限を再確認
-            cameraManager.checkPermissions()
-            cameraManager.startSession()
+            
+            // 非同期で権限チェックとセッション開始
+            Task {
+                await cameraManager.checkPermissionsAsync()
+                await MainActor.run {
+                    print("[RecordingViewModel] Permission granted: \(cameraManager.permissionGranted)")
+                    if cameraManager.permissionGranted {
+                        cameraManager.startSession()
+                    } else {
+                        self.showPermissionDenied = true
+                    }
+                }
+            }
         }
     }
     
@@ -478,6 +610,34 @@ class RecordingViewModel: ObservableObject {
         case .image:
             return "00:00"
         }
+    }
+    
+    // MARK: - Data Management
+    func discardRecording() {
+        print("[RecordingViewModel] Discarding recorded data")
+        
+        // 記録されたファイルがあれば削除
+        if let url = lastRecordedURL {
+            Task {
+                do {
+                    if FileManager.default.fileExists(atPath: url.path) {
+                        try FileManager.default.removeItem(at: url)
+                        print("[RecordingViewModel] Deleted file: \(url.path)")
+                    }
+                } catch {
+                    print("[RecordingViewModel] Failed to delete file: \(error)")
+                }
+                
+                await MainActor.run {
+                    self.lastRecordedURL = nil
+                    self.recordedVideoURL = nil
+                }
+            }
+        }
+        
+        // 状態をリセット
+        recordingCompleted = false
+        isProcessing = false
     }
     
     // MARK: - Cleanup

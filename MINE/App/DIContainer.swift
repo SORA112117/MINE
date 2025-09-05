@@ -71,6 +71,13 @@ class DIContainer: ObservableObject {
         )
     }()
     
+    lazy var updateRecordUseCase: UpdateRecordUseCase = {
+        UpdateRecordUseCase(
+            recordRepository: recordRepository,
+            manageTagsUseCase: manageTagsUseCase
+        )
+    }()
+    
     lazy var manageFoldersUseCase: ManageFoldersUseCase = {
         ManageFoldersUseCase(folderRepository: folderRepository)
     }()
@@ -123,6 +130,16 @@ class DIContainer: ObservableObject {
             createRecordUseCase: createRecordUseCase,
             mediaService: mediaService,
             manageTemplatesUseCase: manageTemplatesUseCase
+        )
+    }
+    
+    @MainActor
+    func makeRecordDetailViewModel(record: Record) -> RecordDetailViewModel {
+        RecordDetailViewModel(
+            record: record,
+            manageFoldersUseCase: manageFoldersUseCase,
+            updateRecordUseCase: updateRecordUseCase,
+            manageTagsUseCase: manageTagsUseCase
         )
     }
 }

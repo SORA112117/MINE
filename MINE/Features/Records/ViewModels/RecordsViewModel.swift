@@ -83,6 +83,14 @@ class RecordsViewModel: ObservableObject {
         }
     }
     
+    // データを強制的にリフレッシュ
+    func refreshData() {
+        loadTask?.cancel()
+        loadTask = Task {
+            await loadDataAsync()
+        }
+    }
+    
     @MainActor
     func loadDataAsync() async {
         // 既にロード中の場合は重複実行を防ぐ
@@ -105,13 +113,6 @@ class RecordsViewModel: ObservableObject {
         isLoading = false
     }
     
-    func refreshData() {
-        // 手動リフレッシュは初期化フラグに関係なく実行
-        loadTask?.cancel()
-        loadTask = Task {
-            await loadDataAsync()
-        }
-    }
     
     func forceLoadData() {
         // 強制的にデータを再読み込み（初期化フラグを無視）
@@ -138,23 +139,97 @@ class RecordsViewModel: ObservableObject {
     }
     
     func moveRecordsToFolder(_ folderId: UUID?) async throws {
-        for _ in selectedRecords {
-            // Record移動のロジック（Use Caseに追加が必要）
-            // 現在は簡易実装
+        // 選択された記録をフォルダに移動
+        for recordId in selectedRecords {
+            if let recordIndex = records.firstIndex(where: { $0.id == recordId }) {
+                var updatedRecord = records[recordIndex]
+                
+                // Record構造体を更新（folderId変更）
+                let newRecord = Record(
+                    id: updatedRecord.id,
+                    type: updatedRecord.type,
+                    createdAt: updatedRecord.createdAt,
+                    updatedAt: Date(), // 更新日時を現在時刻に
+                    duration: updatedRecord.duration,
+                    fileURL: updatedRecord.fileURL,
+                    thumbnailURL: updatedRecord.thumbnailURL,
+                    comment: updatedRecord.comment,
+                    tags: updatedRecord.tags,
+                    folderId: folderId, // フォルダIDを更新
+                    templateId: updatedRecord.templateId
+                )
+                
+                // TODO: 実際のUse Case実装時は以下のようになる
+                // try await updateRecordUseCase.updateFolder(recordId: recordId, folderId: folderId)
+                
+                // 一時的にローカル配列を更新
+                records[recordIndex] = newRecord
+            }
         }
+        
         selectedRecords.removeAll()
         isSelectionMode = false
-        try await loadRecords()
+        
+        // UI更新のためのリフレッシュ（実際の実装ではUse Caseからリロードする）
+        await MainActor.run {
+            objectWillChange.send()
+        }
     }
     
     func addTagsToRecords(_ tags: [Tag]) async throws {
-        for _ in selectedRecords {
-            // RecordにTagを追加するロジック（Use Caseに追加が必要）
-            // 現在は簡易実装
+        // 選択された記録にタグを追加
+        let tagsSet = Set(tags)
+        
+        for recordId in selectedRecords {
+            if let recordIndex = records.firstIndex(where: { $0.id == recordId }) {
+                var updatedRecord = records[recordIndex]
+                
+                // 既存のタグに新しいタグを追加（重複は自動的に除外される）
+                let updatedTags = updatedRecord.tags.union(tagsSet)
+                
+                // Record構造体を更新（tags変更）
+                let newRecord = Record(
+                    id: updatedRecord.id,
+                    type: updatedRecord.type,
+                    createdAt: updatedRecord.createdAt,
+                    updatedAt: Date(), // 更新日時を現在時刻に
+                    duration: updatedRecord.duration,
+                    fileURL: updatedRecord.fileURL,
+                    thumbnailURL: updatedRecord.thumbnailURL,
+                    comment: updatedRecord.comment,
+                    tags: updatedTags, // タグを更新
+                    folderId: updatedRecord.folderId,
+                    templateId: updatedRecord.templateId
+                )
+                
+                // TODO: 実際のUse Case実装時は以下のようになる
+                // try await updateRecordUseCase.updateTags(recordId: recordId, tags: Array(updatedTags))
+                
+                // 一時的にローカル配列を更新
+                records[recordIndex] = newRecord
+            }
         }
+        
+        // タグの使用回数を更新（TODO: Use Caseで実装）
+        for tag in tags {
+            if let tagIndex = self.tags.firstIndex(where: { $0.id == tag.id }) {
+                let updatedTag = Tag(
+                    id: tag.id,
+                    name: tag.name,
+                    color: tag.color,
+                    usageCount: tag.usageCount + selectedRecords.count
+                )
+                self.tags[tagIndex] = updatedTag
+            }
+        }
+        
         selectedRecords.removeAll()
         isSelectionMode = false
-        try await loadRecords()
+        
+        // UI更新のためのリフレッシュ
+        await MainActor.run {
+            objectWillChange.send()
+        }
     }
     
     // MARK: - Selection Management
@@ -321,6 +396,15 @@ class RecordsViewModel: ObservableObject {
             .debounce(for: .milliseconds(300), scheduler: RunLoop.main)
             .sink { [weak self] _ in
                 self?.applyFilters()
+            }
+            .store(in: &cancellables)
+        
+        // 新しい記録が保存された通知を監視
+        NotificationCenter.default.publisher(for: .recordSaved)
+            .sink { [weak self] _ in
+                Task { @MainActor [weak self] in
+                    self?.refreshData()
+                }
             }
             .store(in: &cancellables)
     }

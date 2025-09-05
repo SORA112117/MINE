@@ -14,21 +14,26 @@ struct CalendarRecordsView: View {
     private let calendar = Calendar.current
     
     var body: some View {
-        VStack(spacing: 0) {
-            // カレンダーヘッダー
-            calendarHeader
-            
-            // ヒートマップカレンダー
-            heatmapCalendar
-            
-            // 選択日の詳細
-            if !selectedRecords.isEmpty {
-                selectedDateDetails
-            } else {
-                emptyStateView
+        ScrollView {
+            VStack(spacing: 16) {
+                // カレンダーヘッダー
+                calendarHeader
+                
+                // ヒートマップカレンダー
+                heatmapCalendar
+                
+                // 選択日の詳細
+                if !selectedRecords.isEmpty {
+                    selectedDateDetailsFullHeight
+                } else {
+                    emptyStateView
+                }
             }
+            .background(Theme.background)
         }
-        .background(Theme.background)
+        .refreshable {
+            await viewModel.loadDataAsync()
+        }
         .onAppear {
             updateSelectedRecords()
         }
@@ -100,6 +105,7 @@ struct CalendarRecordsView: View {
             )
         }
         .padding(.horizontal)
+        .padding(.bottom, 8) // 下部に余白を追加して重なりを防止
     }
     
     // MARK: - Heatmap Calendar
@@ -199,8 +205,53 @@ struct CalendarRecordsView: View {
                     .font(.subheadline)
                     .foregroundColor(Theme.gray5)
             }
+            .padding(.horizontal)
+            .padding(.top)
             
-            // レコードリスト
+            // スクロール可能なレコードリスト
+            ScrollView {
+                LazyVStack(spacing: 8) {
+                    ForEach(selectedRecords, id: \.id) { record in
+                        CalendarRecordRow(
+                            record: record,
+                            onTap: { onRecordTap(record) }
+                        )
+                    }
+                }
+                .padding(.horizontal)
+                .padding(.bottom)
+            }
+            .frame(maxHeight: 300) // 最大高さを制限してスクロールを促進
+            .refreshable {
+                await viewModel.loadDataAsync()
+            }
+        }
+        .background(Color.white)
+        .cornerRadius(Constants.UI.cornerRadius)
+        .shadow(color: Theme.shadowColor, radius: 2, x: 0, y: 1)
+        .padding(.horizontal)
+    }
+    
+    // MARK: - Selected Date Details (Full Height)
+    private var selectedDateDetailsFullHeight: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            // セクションヘッダー
+            HStack {
+                Text(selectedDateText)
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                Spacer()
+                
+                Text("\(selectedRecords.count)件")
+                    .font(.subheadline)
+                    .foregroundColor(Theme.gray5)
+            }
+            .padding(.horizontal)
+            .padding(.top)
+            
+            // レコードリスト（スクロール無し、全て表示）
             LazyVStack(spacing: 8) {
                 ForEach(selectedRecords, id: \.id) { record in
                     CalendarRecordRow(
@@ -209,8 +260,9 @@ struct CalendarRecordsView: View {
                     )
                 }
             }
+            .padding(.horizontal)
+            .padding(.bottom)
         }
-        .padding()
         .background(Color.white)
         .cornerRadius(Constants.UI.cornerRadius)
         .shadow(color: Theme.shadowColor, radius: 2, x: 0, y: 1)

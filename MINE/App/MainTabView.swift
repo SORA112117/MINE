@@ -64,12 +64,12 @@ struct MainTabView: View {
             
         case .folderPicker:
             NavigationStack {
-                FolderPickerView()
+                Text("フォルダピッカー（実装予定）")
             }
             
         case .tagEditor:
             NavigationStack {
-                TagEditorView()
+                Text("タグエディター（実装予定）")
             }
             
         case .templateEditor(let template):

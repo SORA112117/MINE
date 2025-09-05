@@ -20,6 +20,7 @@ class CameraManager: NSObject, ObservableObject {
     private let session = AVCaptureSession()
     private let sessionQueue = DispatchQueue(label: "camera.session.queue")
     private var videoOutput: AVCaptureMovieFileOutput?
+    private var photoOutput: AVCapturePhotoOutput?
     private var currentVideoURL: URL?
     private var recordingTimer: Timer?
     private var maxRecordingDuration: TimeInterval {
@@ -70,7 +71,7 @@ class CameraManager: NSObject, ObservableObject {
         }
     }
     
-    private func checkPermissionsAsync() async {
+    func checkPermissionsAsync() async {
         switch AVCaptureDevice.authorizationStatus(for: .video) {
         case .authorized:
             permissionGranted = true
@@ -167,6 +168,13 @@ class CameraManager: NSObject, ObservableObject {
             // 最大録画時間を設定
             let maxDuration = CMTime(seconds: maxRecordingDuration, preferredTimescale: 600)
             movieOutput.maxRecordedDuration = maxDuration
+        }
+        
+        // Photo Output
+        let photoOutput = AVCapturePhotoOutput()
+        if session.canAddOutput(photoOutput) {
+            session.addOutput(photoOutput)
+            self.photoOutput = photoOutput
         }
         
         session.commitConfiguration()
@@ -352,9 +360,56 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
             }
         }
     }
+    
+    // MARK: - Photo Capture
+    func capturePhoto() async throws -> URL {
+        guard let photoOutput = photoOutput else {
+            throw CameraError.deviceNotAvailable
+        }
+        
+        return try await withCheckedThrowingContinuation { continuation in
+            let settings = AVCapturePhotoSettings()
+            let delegate = PhotoCaptureDelegate(continuation: continuation)
+            photoOutput.capturePhoto(with: settings, delegate: delegate)
+        }
+    }
+}
+
+// MARK: - Photo Capture Delegate
+private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
+    private let continuation: CheckedContinuation<URL, Error>
+    
+    init(continuation: CheckedContinuation<URL, Error>) {
+        self.continuation = continuation
+    }
+    
+    func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        if let error = error {
+            continuation.resume(throwing: error)
+            return
+        }
+        
+        guard let imageData = photo.fileDataRepresentation() else {
+            continuation.resume(throwing: CameraManager.CameraError.recordingFailed("画像データの取得に失敗しました"))
+            return
+        }
+        
+        // ファイルに保存
+        let filename = "photo_\(Date().timeIntervalSince1970).jpg"
+        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
+        let fileURL = documentsPath.appendingPathComponent(filename)
+        
+        do {
+            try imageData.write(to: fileURL)
+            continuation.resume(returning: fileURL)
+        } catch {
+            continuation.resume(throwing: error)
+        }
+    }
 }
 
 // MARK: - Notification Names
 extension Notification.Name {
     static let videoRecordingCompleted = Notification.Name("videoRecordingCompleted")
+    static let recordSaved = Notification.Name("recordSaved")
 }
