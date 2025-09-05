@@ -291,3 +291,134 @@ func gestureRecognizer(_ gestureRecognizer: UIGestureRecognizer, shouldRecognize
 - `MINE/Features/VideoEditor/Views/VideoEditorView.swift`
 - `MINE/Features/VideoEditor/ViewModels/VideoEditorViewModel.swift`
 - `MINE/Features/VideoEditor/Views/Components/VideoTimelineView.swift`
+
+---
+
+## 2025年9月5日 - VideoPlayerCropView.swiftビルドエラー修正
+
+### 問題概要
+VideoPlayerCropView.swiftで複数のビルドエラーが発生し、コンパイルが通らない状態。
+
+### エラー詳細
+1. **CropOverlayViewの重複宣言エラー**
+   ```
+   /Users/sora1/CODE/MINE/MINE/Features/VideoEditor/Views/Components/VideoPlayerCropView.swift:493:8: 
+   error: invalid redeclaration of 'CropOverlayView'
+   ```
+
+2. **引数なしメソッドへの引数渡しエラー**
+   ```
+   /Users/sora1/CODE/MINE/MINE/Features/VideoEditor/Views/Components/VideoPlayerCropView.swift:63:49: 
+   error: argument passed to call that takes no arguments
+   ```
+
+3. **onReceiveメンバーなしエラー**
+   ```
+   /Users/sora1/CODE/MINE/MINE/Features/VideoEditor/Views/Components/VideoPlayerCropView.swift:64:26: 
+   error: value of type 'CropOverlayView' has no member 'onReceive'
+   ```
+
+4. **CGSize.isEmptyプロパティなしエラー**
+   ```
+   /Users/sora1/CODE/MINE/MINE/Features/VideoEditor/Views/Components/VideoPlayerCropView.swift:145:30: 
+   error: value of type 'CGSize' has no member 'isEmpty'
+   ```
+
+### 根本原因分析
+
+#### 1. ファイル構造の混乱
+- `HybridCropSystem.swift`と`VideoPlayerCropView.swift`の両方に`CropOverlayView`が定義されていた
+- 複数のProCropSystemファイルにも類似の構造体が存在し、名前衝突が発生
+
+#### 2. 依存関係の不整合
+- `onReceive`メソッドを使用するため`Combine`フレームワークのインポートが必要
+- SwiftUIのViewModifierの適用順序に問題
+
+#### 3. プラットフォームAPI互換性
+- `CGSize.isEmpty`はiOS 16.0以降のAPI
+- 後方互換性のためには`.zero`比較を使用する必要
+
+### 解決手順
+
+#### Step 1: 重複ファイル整理
+```bash
+# 不要な重複ファイルを削除
+rm /Users/sora1/CODE/MINE/HybridCropSystem.swift
+```
+
+#### Step 2: Combineフレームワーク追加
+```swift
+// VideoPlayerCropView.swiftに追加
+import Combine
+```
+
+#### Step 3: 名前衝突回避
+```swift
+// CropOverlayView → HybridCropOverlayViewに変更
+struct HybridCropOverlayView: View {
+    @ObservedObject var controller: CropController
+    // ...
+}
+```
+
+#### Step 4: CGSize.isEmpty対応
+```swift
+// iOS 16.0未満対応の修正
+guard containerSize != .zero && videoSize.width > 0 && videoSize.height > 0 else {
+    // ...
+}
+```
+
+#### Step 5: onChange警告修正
+```swift
+// iOS 17対応のonChange構文
+.onChange(of: geometry.size) { _, newSize in
+    cropController.updateContainerSize(newSize)
+}
+.onChange(of: aspectRatio) { _, newRatio in
+    cropController.updateAspectRatio(newRatio)
+}
+```
+
+### 修正結果
+- **ビルドステータス**: ✅ BUILD SUCCEEDED
+- **エラー件数**: 4件 → 0件
+- **警告件数**: 2件 → 0件
+
+### 技術的改善点
+
+#### 1. アーキテクチャの整理
+- 重複するコンポーネントを統合し、単一責任原則を維持
+- ファイル間の依存関係を明確化
+
+#### 2. 後方互換性の確保
+- iOS 16.0以降のAPIに依存しない実装に変更
+- プラットフォーム固有の機能は適切にチェック
+
+#### 3. SwiftUI最新構文対応
+- 非推奨のonChange構文を最新版に更新
+- コンパイラ警告の完全解決
+
+### 予防策
+
+#### 1. ファイル管理
+- 同一機能の構造体は単一ファイルに集約
+- 名前空間を適切に管理し、衝突を回避
+
+#### 2. 依存関係管理
+- 使用するFrameworkは明示的にインポート
+- プラットフォーム互換性を常に考慮
+
+#### 3. 継続的品質管理
+- 定期的なビルドチェックの実施
+- 警告レベルでの修正対応
+
+### 関連ファイル
+- `MINE/Features/VideoEditor/Views/Components/VideoPlayerCropView.swift` (修正)
+- `HybridCropSystem.swift` (削除)
+
+### 学習ポイント
+- **SwiftUIの名前空間管理**: 同名構造体の衝突回避方法
+- **後方互換性設計**: プラットフォームAPIの適切な使用
+- **エラー解析手法**: ビルドエラーの体系的な解決アプローチ
+- **依存関係理解**: フレームワーク間の相互作用
