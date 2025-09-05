@@ -177,6 +177,19 @@ class VideoEditorViewModel: ObservableObject {
         showCropOverlay = false
     }
     
+    func finalizeCropEditing() {
+        // クロップ編集完了時の処理 - 現在の状態を確実に保存
+        if cropRect != .zero {
+            editParameters.cropRect = cropRect
+            print("✅ クロップ範囲保存完了: \(cropRect)")
+        } else {
+            print("⚠️ 無効なクロップ範囲: \(cropRect)")
+        }
+        
+        // プレビューの更新をトリガー
+        objectWillChange.send()
+    }
+    
     func applyCropAspectRatio(_ ratio: CropAspectRatio) {
         // メインスレッドで安全に実行
         DispatchQueue.main.async { [weak self] in

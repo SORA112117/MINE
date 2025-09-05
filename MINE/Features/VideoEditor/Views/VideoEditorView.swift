@@ -300,10 +300,14 @@ struct VideoEditorView: View {
                 )
                 
                 Button(viewModel.showCropOverlay ? "編集完了" : "クロップ開始") {
-                    viewModel.showCropOverlay.toggle()
                     if viewModel.showCropOverlay {
+                        // クロップ編集完了 - 現在の設定を確実に保存
+                        viewModel.finalizeCropEditing()
+                    } else {
+                        // クロップ開始
                         viewModel.applyCropAspectRatio(viewModel.cropAspectRatio)
                     }
+                    viewModel.showCropOverlay.toggle()
                 }
                 .font(.subheadline)
                 .fontWeight(.medium)

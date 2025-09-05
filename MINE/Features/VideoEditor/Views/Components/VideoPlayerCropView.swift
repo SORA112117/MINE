@@ -380,6 +380,9 @@ class CropController: ObservableObject {
             newFrame = enforceAspectRatio(newFrame, handle: handle)
         }
         
+        // リアルタイム制約適用 - リサイズ中も画像範囲外に出ないよう制限
+        newFrame = constrainFrame(newFrame, to: videoDisplayRect)
+        
         cropRect = newFrame
         updateVideoCropRect()
     }
@@ -388,13 +391,17 @@ class CropController: ObservableObject {
         let newCenterX = point.x - moveOffset.x
         let newCenterY = point.y - moveOffset.y
         
-        cropRect = CGRect(
+        var newRect = CGRect(
             x: newCenterX - cropRect.width / 2,
             y: newCenterY - cropRect.height / 2,
             width: cropRect.width,
             height: cropRect.height
         )
         
+        // リアルタイム制約適用 - ドラッグ中に画像範囲外に出ないよう制限
+        newRect = constrainFrame(newRect, to: videoDisplayRect)
+        
+        cropRect = newRect
         updateVideoCropRect()
     }
     
@@ -548,30 +555,33 @@ struct HybridCropOverlayView: View {
     
     private var gridLines: some View {
         ZStack {
-            // Vertical lines
+            // Vertical lines - クロップ範囲内に正確に配置
             ForEach(1..<3) { i in
                 Rectangle()
                     .fill(Color.white.opacity(0.5))
-                    .frame(width: 1)
+                    .frame(width: 1, height: controller.cropRect.height)
                     .position(
                         x: controller.cropRect.minX + (controller.cropRect.width / 3) * CGFloat(i),
                         y: controller.cropRect.midY
                     )
-                    .frame(height: controller.cropRect.height)
             }
             
-            // Horizontal lines
+            // Horizontal lines - クロップ範囲内に正確に配置
             ForEach(1..<3) { i in
                 Rectangle()
                     .fill(Color.white.opacity(0.5))
-                    .frame(height: 1)
+                    .frame(width: controller.cropRect.width, height: 1)
                     .position(
                         x: controller.cropRect.midX,
                         y: controller.cropRect.minY + (controller.cropRect.height / 3) * CGFloat(i)
                     )
-                    .frame(width: controller.cropRect.width)
             }
         }
+        .clipShape(
+            Rectangle()
+                .size(width: controller.cropRect.width, height: controller.cropRect.height)
+                .offset(x: controller.cropRect.minX, y: controller.cropRect.minY)
+        )
     }
     
     private var resizeHandles: some View {
