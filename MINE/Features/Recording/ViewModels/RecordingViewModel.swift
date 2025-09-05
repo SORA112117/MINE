@@ -15,6 +15,7 @@ class RecordingViewModel: ObservableObject {
     @Published var showVideoEditor = false
     @Published var recordedVideoURL: URL?
     @Published var currentRecordingTime: TimeInterval = 0  // 録画時間を直接管理
+    @Published var showRecordingLimitDialog = false  // 5秒制限達成時のダイアログ表示
     
     // 遅延初期化に変更してクラッシュを防ぐ
     @Published var cameraManager: CameraManager?
@@ -113,6 +114,16 @@ class RecordingViewModel: ObservableObject {
             .receive(on: DispatchQueue.main)
             .sink { [weak self] time in
                 self?.currentRecordingTime = time
+            }
+            .store(in: &cancellables)
+        
+        // 5秒制限到達フラグを監視
+        cameraManager.$recordingTimeReachedLimit
+            .receive(on: DispatchQueue.main)
+            .sink { [weak self] reachedLimit in
+                if reachedLimit {
+                    self?.showRecordingLimitDialog = true
+                }
             }
             .store(in: &cancellables)
     }
@@ -348,6 +359,30 @@ class RecordingViewModel: ObservableObject {
             }
             
             isProcessing = false
+        }
+    }
+    
+    // MARK: - 5秒制限ダイアログの選択肢
+    
+    /// 「このまま保存」を選択した場合
+    func saveCurrentRecording() {
+        showRecordingLimitDialog = false
+        stopRecording() // 録画を停止して保存処理に進む
+    }
+    
+    /// 「撮影し直し」を選択した場合  
+    func restartRecording() {
+        showRecordingLimitDialog = false
+        
+        // 現在の録画を停止
+        cameraManager?.stopRecording()
+        
+        // 少し待ってから録画を再開
+        Task {
+            try await Task.sleep(nanoseconds: 500_000_000) // 0.5秒待機
+            await MainActor.run {
+                self.startRecording()
+            }
         }
     }
     

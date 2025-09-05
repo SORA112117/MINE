@@ -28,7 +28,7 @@ class VideoEditorViewModel: ObservableObject {
     
     // MARK: - Properties
     let originalVideoURL: URL
-    private var editorService: VideoEditorService?
+    var editorService: VideoEditorService?  // InteractiveCropViewで使用するためpublicに変更
     private var cancellables = Set<AnyCancellable>()
     var player: AVPlayer?  // VideoPlayerで使用するためpublicに変更
     private var playerObserver: Any?
@@ -178,39 +178,74 @@ class VideoEditorViewModel: ObservableObject {
     }
     
     func applyCropAspectRatio(_ ratio: CropAspectRatio) {
-        guard let videoSize = editorService?.videoSize else { return }
-        
-        cropAspectRatio = ratio
-        
+        // メインスレッドで安全に実行
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self,
+                  let videoSize = self.editorService?.videoSize,
+                  videoSize.width > 0 && videoSize.height > 0 else { 
+                print("Warning: Invalid video size for crop aspect ratio")
+                return 
+            }
+            
+            self.cropAspectRatio = ratio
+            
+            // アスペクト比に基づくクロップ矩形を計算
+            let newCropRect = self.calculateCropRect(for: ratio, videoSize: videoSize)
+            self.updateCropRect(newCropRect)
+            
+            // クロップオーバーレイを表示
+            self.showCropOverlay = true
+        }
+    }
+    
+    // MARK: - Private Helper Methods
+    
+    /// アスペクト比に基づくクロップ矩形を計算
+    private func calculateCropRect(for ratio: CropAspectRatio, videoSize: CGSize) -> CGRect {
         switch ratio {
         case .free:
-            // フリークロップの場合は何もしない
-            break
+            // フリークロップ - 動画全体をデフォルトとする
+            return CGRect(x: 0, y: 0, width: videoSize.width, height: videoSize.height)
             
         case .square:
+            // 正方形 - 短い辺に合わせる
             let size = min(videoSize.width, videoSize.height)
             let x = (videoSize.width - size) / 2
             let y = (videoSize.height - size) / 2
-            updateCropRect(CGRect(x: x, y: y, width: size, height: size))
+            return CGRect(x: x, y: y, width: size, height: size)
             
-        case .portrait:
+        case .portrait: // 9:16
             let targetRatio: CGFloat = 9.0 / 16.0
-            let width = min(videoSize.width, videoSize.height * targetRatio)
-            let height = width / targetRatio
-            let x = (videoSize.width - width) / 2
-            let y = (videoSize.height - height) / 2
-            updateCropRect(CGRect(x: x, y: y, width: width, height: height))
+            return calculateAspectRatioRect(targetRatio: targetRatio, videoSize: videoSize)
             
-        case .landscape:
+        case .landscape: // 16:9
             let targetRatio: CGFloat = 16.0 / 9.0
-            let height = min(videoSize.height, videoSize.width / targetRatio)
-            let width = height * targetRatio
-            let x = (videoSize.width - width) / 2
-            let y = (videoSize.height - height) / 2
-            updateCropRect(CGRect(x: x, y: y, width: width, height: height))
+            return calculateAspectRatioRect(targetRatio: targetRatio, videoSize: videoSize)
+        }
+    }
+    
+    /// 指定アスペクト比での矩形計算
+    private func calculateAspectRatioRect(targetRatio: CGFloat, videoSize: CGSize) -> CGRect {
+        let videoRatio = videoSize.width / videoSize.height
+        
+        var width: CGFloat
+        var height: CGFloat
+        
+        if targetRatio > videoRatio {
+            // ターゲットの方が横長 - 横幅基準
+            width = videoSize.width
+            height = width / targetRatio
+        } else {
+            // ターゲットの方が縦長 - 縦幅基準
+            height = videoSize.height
+            width = height * targetRatio
         }
         
-        showCropOverlay = true
+        // 中央配置
+        let x = (videoSize.width - width) / 2
+        let y = (videoSize.height - height) / 2
+        
+        return CGRect(x: max(0, x), y: max(0, y), width: width, height: height)
     }
     
     // MARK: - Save
@@ -254,6 +289,21 @@ class VideoEditorViewModel: ObservableObject {
                     completion(.failure(error))
                 }
             }
+        }
+    }
+    
+    // MARK: - Initial Setup
+    func setupInitialState() {
+        // 初期のクロップ領域を動画全体に設定
+        if cropRect == .zero, let videoSize = editorService?.videoSize {
+            // 動画全体をデフォルトのクロップ領域とする
+            cropRect = CGRect(
+                x: 0,
+                y: 0,
+                width: videoSize.width,
+                height: videoSize.height
+            )
+            editParameters.cropRect = cropRect
         }
     }
     

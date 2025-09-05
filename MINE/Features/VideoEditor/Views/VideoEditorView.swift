@@ -22,11 +22,6 @@ struct VideoEditorView: View {
                 
                 // ビデオプレビュー
                 videoPreview
-                    .overlay(alignment: .bottom) {
-                        if viewModel.showCropOverlay {
-                            cropOverlay
-                        }
-                    }
                 
                 // 編集コントロール
                 editingControls
@@ -46,6 +41,10 @@ struct VideoEditorView: View {
             }
         } message: {
             Text(viewModel.error ?? "不明なエラーが発生しました")
+        }
+        .onAppear {
+            // 編集画面の初期設定
+            viewModel.setupInitialState()
         }
     }
     
@@ -85,23 +84,37 @@ struct VideoEditorView: View {
     private var videoPreview: some View {
         GeometryReader { geometry in
             if let player = viewModel.player {
-                VideoPlayer(player: player)
-                    .disabled(true)
-                    .aspectRatio(contentMode: .fit)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-                    .background(Color.black)
-                    .overlay(alignment: .bottom) {
-                        // 再生コントロール
+                VideoPlayerCropView(
+                    player: player,
+                    cropRect: $viewModel.cropRect,
+                    videoSize: viewModel.editorService?.videoSize ?? .zero,
+                    aspectRatio: viewModel.cropAspectRatio,
+                    showCropOverlay: viewModel.currentOperation == .crop && viewModel.showCropOverlay,
+                    onCropChanged: { rect in
+                        viewModel.updateCropRect(rect)
+                    }
+                )
+                .overlay(alignment: .bottom) {
+                    // 再生コントロール（クロップ時は非表示）
+                    if viewModel.currentOperation != .crop || !viewModel.showCropOverlay {
                         playbackControls
                             .padding()
                     }
+                }
             } else {
                 // プレイヤーが初期化されていない場合
                 Rectangle()
                     .fill(Color.black)
                     .overlay(
-                        ProgressView("動画を読み込み中...")
-                            .foregroundColor(.white)
+                        VStack(spacing: 16) {
+                            ProgressView()
+                                .progressViewStyle(CircularProgressViewStyle(tint: .white))
+                                .scaleEffect(1.2)
+                            
+                            Text("動画を読み込み中...")
+                                .foregroundColor(.white)
+                                .font(.subheadline)
+                        }
                     )
             }
         }
@@ -109,71 +122,67 @@ struct VideoEditorView: View {
     
     // MARK: - Playback Controls
     private var playbackControls: some View {
-        HStack {
+        HStack(spacing: 16) {
             Button(action: viewModel.togglePlayback) {
                 Image(systemName: viewModel.isPlaying ? "pause.fill" : "play.fill")
                     .font(.title2)
                     .foregroundColor(.white)
                     .frame(width: 44, height: 44)
-                    .background(Circle().fill(Color.white.opacity(0.2)))
+                    .background(
+                        Circle()
+                            .fill(Color.black.opacity(0.7))
+                            .overlay(
+                                Circle()
+                                    .stroke(Color.white.opacity(0.3), lineWidth: 1)
+                            )
+                    )
             }
             
-            Text(viewModel.formattedCurrentTime)
-                .font(.caption)
-                .foregroundColor(.white)
-                .monospacedDigit()
+            VStack(alignment: .leading, spacing: 4) {
+                Text(viewModel.formattedCurrentTime)
+                    .font(.caption)
+                    .foregroundColor(.white)
+                    .monospacedDigit()
+                
+                // プレイバック位置スライダー
+                Slider(
+                    value: Binding(
+                        get: {
+                            guard viewModel.videoDuration > 0 else { return 0 }
+                            return viewModel.currentPlaybackTime.seconds / viewModel.videoDuration
+                        },
+                        set: { viewModel.seek(to: $0) }
+                    ),
+                    in: 0...1
+                )
+                .accentColor(.white)
+                .frame(width: 200)
+            }
             
-            Slider(
-                value: Binding(
-                    get: { viewModel.currentPlaybackTime.seconds / viewModel.videoDuration },
-                    set: { viewModel.seek(to: $0) }
-                ),
-                in: 0...1
-            )
-            .accentColor(.white)
-            
-            Text(viewModel.formattedTrimmedDuration)
-                .font(.caption)
-                .foregroundColor(.white)
-                .monospacedDigit()
+            VStack(alignment: .trailing, spacing: 4) {
+                Text("編集後")
+                    .font(.caption2)
+                    .foregroundColor(.white.opacity(0.7))
+                
+                Text(viewModel.formattedTrimmedDuration)
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                    .monospacedDigit()
+            }
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
         .background(
-            RoundedRectangle(cornerRadius: 8)
-                .fill(Color.black.opacity(0.6))
+            RoundedRectangle(cornerRadius: 12)
+                .fill(Color.black.opacity(0.8))
+                .overlay(
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(Color.white.opacity(0.2), lineWidth: 1)
+                )
         )
     }
     
-    // MARK: - Crop Overlay
-    private var cropOverlay: some View {
-        GeometryReader { geometry in
-            let rect = viewModel.cropRect
-            
-            // 半透明の黒でマスク
-            Color.black.opacity(0.5)
-                .overlay(
-                    Rectangle()
-                        .frame(width: rect.width, height: rect.height)
-                        .position(x: rect.midX, y: rect.midY)
-                        .blendMode(.destinationOut)
-                )
-                .compositingGroup()
-            
-            // クロップ枠
-            Rectangle()
-                .stroke(Color.white, lineWidth: 2)
-                .frame(width: rect.width, height: rect.height)
-                .position(x: rect.midX, y: rect.midY)
-                .overlay(
-                    // グリッドライン
-                    GridLinesView()
-                        .frame(width: rect.width, height: rect.height)
-                        .position(x: rect.midX, y: rect.midY)
-                )
-        }
-        .allowsHitTesting(false)
-    }
     
     // MARK: - Editing Controls
     private var editingControls: some View {
@@ -202,20 +211,17 @@ struct VideoEditorView: View {
     // MARK: - Trim Controls
     private var trimControls: some View {
         VStack(spacing: 16) {
-            // タイムライン
-            VideoTrimmerView(
+            // 高品質タイムライン
+            VideoTimelineView(
                 startPosition: $viewModel.trimStartPosition,
                 endPosition: $viewModel.trimEndPosition,
+                videoURL: viewModel.originalVideoURL,
                 duration: viewModel.videoDuration,
-                videoURL: viewModel.originalVideoURL
+                onPositionChanged: {
+                    viewModel.updateTrimRange()
+                }
             )
-            .frame(height: 60)
-            .onChange(of: viewModel.trimStartPosition) { _ in
-                viewModel.updateTrimRange()
-            }
-            .onChange(of: viewModel.trimEndPosition) { _ in
-                viewModel.updateTrimRange()
-            }
+            .frame(height: 100)
             
             // トリミング後の長さ表示
             HStack {
@@ -239,44 +245,112 @@ struct VideoEditorView: View {
     
     // MARK: - Crop Controls
     private var cropControls: some View {
-        VStack(spacing: 16) {
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 16) {
-                    ForEach(CropAspectRatio.allCases, id: \.self) { ratio in
-                        Button(action: {
-                            viewModel.applyCropAspectRatio(ratio)
-                        }) {
-                            Text(ratio.displayName)
-                                .font(.caption)
-                                .foregroundColor(viewModel.cropAspectRatio == ratio ? .black : .white)
-                                .padding(.horizontal, 16)
-                                .padding(.vertical, 8)
-                                .background(
-                                    Capsule()
-                                        .fill(viewModel.cropAspectRatio == ratio ? Color.white : Color.white.opacity(0.2))
-                                )
+        VStack(spacing: 20) {
+            // アスペクト比選択
+            VStack(spacing: 12) {
+                Text("アスペクト比")
+                    .font(.subheadline)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white)
+                
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 12) {
+                        ForEach(CropAspectRatio.allCases, id: \.self) { ratio in
+                            cropAspectButton(for: ratio)
                         }
                     }
+                    .padding(.horizontal)
                 }
-                .padding(.horizontal)
             }
             
-            if viewModel.showCropOverlay {
+            // クロップ操作説明
+            VStack(spacing: 8) {
+                Text("操作方法")
+                    .font(.caption)
+                    .fontWeight(.medium)
+                    .foregroundColor(.white.opacity(0.8))
+                
+                HStack(spacing: 16) {
+                    instructionItem(icon: "hand.draw", text: "ドラッグして移動")
+                    instructionItem(icon: "arrow.up.left.and.arrow.down.right", text: "角をドラッグしてサイズ調整")
+                }
+            }
+            
+            // アクションボタン
+            HStack(spacing: 16) {
                 Button("リセット") {
                     viewModel.resetCrop()
                 }
-                .font(.caption)
+                .font(.subheadline)
                 .foregroundColor(.white)
-                .padding(.horizontal, 16)
-                .padding(.vertical, 8)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
                 .background(
                     Capsule()
                         .stroke(Color.white.opacity(0.5), lineWidth: 1)
                 )
+                
+                Button(viewModel.showCropOverlay ? "編集完了" : "クロップ開始") {
+                    viewModel.showCropOverlay.toggle()
+                    if viewModel.showCropOverlay {
+                        viewModel.applyCropAspectRatio(viewModel.cropAspectRatio)
+                    }
+                }
+                .font(.subheadline)
+                .fontWeight(.medium)
+                .foregroundColor(.black)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(
+                    Capsule()
+                        .fill(Color.white)
+                )
             }
         }
-        .padding()
-        .background(Color.black.opacity(0.8))
+        .padding(.vertical, 20)
+        .padding(.horizontal, 16)
+        .background(Color.black.opacity(0.9))
+    }
+    
+    private func cropAspectButton(for ratio: CropAspectRatio) -> some View {
+        Button(action: {
+            viewModel.applyCropAspectRatio(ratio)
+        }) {
+            VStack(spacing: 6) {
+                Rectangle()
+                    .fill(viewModel.cropAspectRatio == ratio ? Color.white : Color.white.opacity(0.3))
+                    .frame(
+                        width: ratio == .portrait ? 20 : (ratio == .landscape ? 32 : 24),
+                        height: ratio == .portrait ? 32 : (ratio == .landscape ? 20 : 24)
+                    )
+                    .overlay(
+                        Rectangle()
+                            .stroke(Color.white, lineWidth: 1)
+                    )
+                
+                Text(ratio.displayName)
+                    .font(.caption2)
+                    .foregroundColor(viewModel.cropAspectRatio == ratio ? .white : .white.opacity(0.7))
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(viewModel.cropAspectRatio == ratio ? Color.white.opacity(0.2) : Color.clear)
+            )
+        }
+    }
+    
+    private func instructionItem(icon: String, text: String) -> some View {
+        HStack(spacing: 6) {
+            Image(systemName: icon)
+                .font(.caption)
+                .foregroundColor(.blue)
+            
+            Text(text)
+                .font(.caption2)
+                .foregroundColor(.white.opacity(0.7))
+        }
     }
     
     // MARK: - Save Button
@@ -352,95 +426,4 @@ struct VideoEditorView: View {
     }
 }
 
-// MARK: - Grid Lines View
-struct GridLinesView: View {
-    var body: some View {
-        GeometryReader { geometry in
-            Path { path in
-                // 縦線
-                let thirdWidth = geometry.size.width / 3
-                for i in 1..<3 {
-                    path.move(to: CGPoint(x: thirdWidth * CGFloat(i), y: 0))
-                    path.addLine(to: CGPoint(x: thirdWidth * CGFloat(i), y: geometry.size.height))
-                }
-                
-                // 横線
-                let thirdHeight = geometry.size.height / 3
-                for i in 1..<3 {
-                    path.move(to: CGPoint(x: 0, y: thirdHeight * CGFloat(i)))
-                    path.addLine(to: CGPoint(x: geometry.size.width, y: thirdHeight * CGFloat(i)))
-                }
-            }
-            .stroke(Color.white.opacity(0.3), lineWidth: 0.5)
-        }
-    }
-}
 
-// MARK: - Video Trimmer View (簡易版)
-struct VideoTrimmerView: View {
-    @Binding var startPosition: Double
-    @Binding var endPosition: Double
-    let duration: Double
-    let videoURL: URL
-    
-    var body: some View {
-        GeometryReader { geometry in
-            ZStack {
-                // 背景
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.1))
-                
-                // 選択範囲
-                RoundedRectangle(cornerRadius: 4)
-                    .fill(Color.white.opacity(0.3))
-                    .frame(
-                        width: (endPosition - startPosition) * geometry.size.width,
-                        height: geometry.size.height
-                    )
-                    .position(
-                        x: (startPosition + (endPosition - startPosition) / 2) * geometry.size.width,
-                        y: geometry.size.height / 2
-                    )
-                
-                // 開始ハンドル
-                trimHandle(isStart: true)
-                    .position(
-                        x: startPosition * geometry.size.width,
-                        y: geometry.size.height / 2
-                    )
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newPosition = max(0, min(value.location.x / geometry.size.width, endPosition - 0.01))
-                                startPosition = newPosition
-                            }
-                    )
-                
-                // 終了ハンドル
-                trimHandle(isStart: false)
-                    .position(
-                        x: endPosition * geometry.size.width,
-                        y: geometry.size.height / 2
-                    )
-                    .gesture(
-                        DragGesture()
-                            .onChanged { value in
-                                let newPosition = max(startPosition + 0.01, min(value.location.x / geometry.size.width, 1))
-                                endPosition = newPosition
-                            }
-                    )
-            }
-        }
-    }
-    
-    private func trimHandle(isStart: Bool) -> some View {
-        RoundedRectangle(cornerRadius: 2)
-            .fill(Color.white)
-            .frame(width: 10, height: 50)
-            .overlay(
-                Image(systemName: isStart ? "chevron.left" : "chevron.right")
-                    .font(.caption2)
-                    .foregroundColor(.black)
-            )
-    }
-}

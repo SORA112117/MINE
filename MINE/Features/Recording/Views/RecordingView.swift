@@ -62,6 +62,16 @@ struct RecordingView: View {
                 }
             }
         }
+        .alert("録画時間の上限に達しました", isPresented: $viewModel.showRecordingLimitDialog) {
+            Button("このまま保存") {
+                viewModel.saveCurrentRecording()
+            }
+            Button("撮影し直し") {
+                viewModel.restartRecording()
+            }
+        } message: {
+            Text("フリープランでは5秒まで録画できます。プレミアムプランでは無制限で録画が可能です。")
+        }
     }
     
     // MARK: - Video Recording View

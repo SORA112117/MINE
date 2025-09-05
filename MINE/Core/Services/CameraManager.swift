@@ -10,6 +10,7 @@ class CameraManager: NSObject, ObservableObject {
     @Published var recordingTime: TimeInterval = 0
     @Published var permissionGranted = false
     @Published var error: CameraError?
+    @Published var recordingTimeReachedLimit = false  // 5秒制限到達フラグ
     
     // MARK: - Recording Limits
     let freeVersionVideoLimit: TimeInterval = 5.0 // 5秒
@@ -265,6 +266,7 @@ class CameraManager: NSObject, ObservableObject {
         output.startRecording(to: url, recordingDelegate: self)
         isRecording = true
         recordingTime = 0
+        recordingTimeReachedLimit = false  // フラグをリセット
         
         // タイマー開始
         startRecordingTimer()
@@ -277,6 +279,7 @@ class CameraManager: NSObject, ObservableObject {
         
         output.stopRecording()
         isRecording = false
+        recordingTimeReachedLimit = false  // フラグをリセット
         stopRecordingTimer()
     }
     
@@ -288,8 +291,15 @@ class CameraManager: NSObject, ObservableObject {
             Task { @MainActor in
                 self.recordingTime += 0.1
                 
-                // 最大録画時間に達したら自動停止
-                if self.recordingTime >= self.maxRecordingDuration {
+                // フリープランで5秒に達した場合はフラグを立てる（自動停止はしない）
+                if !KeychainService.shared.isProVersion && self.recordingTime >= self.freeVersionVideoLimit {
+                    if !self.recordingTimeReachedLimit {
+                        self.recordingTimeReachedLimit = true
+                    }
+                }
+                
+                // プレミアムプランの最大時間に達したら自動停止
+                if KeychainService.shared.isProVersion && self.recordingTime >= self.maxRecordingDuration {
                     self.stopRecording()
                 }
             }
