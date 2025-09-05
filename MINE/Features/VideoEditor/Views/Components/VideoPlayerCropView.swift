@@ -2,7 +2,7 @@ import SwiftUI
 import AVKit
 import AVFoundation
 
-// MARK: - Video Player with Professional Crop System
+// MARK: - Video Player with Ultra Crop System
 struct VideoPlayerCropView: UIViewRepresentable {
     let player: AVPlayer
     @Binding var cropRect: CGRect
@@ -12,19 +12,18 @@ struct VideoPlayerCropView: UIViewRepresentable {
     let onCropChanged: (CGRect) -> Void
     
     func makeUIView(context: Context) -> UIView {
-        // 新しいProCropSystemを使用
-        let containerView = ProCropContainerUIView(
+        // UltraCropSystem使用 - HTMLアルゴリズムベース単一ビューシステム
+        let ultraCropView = UltraCropView(
             player: player,
-            videoSize: videoSize,
-            onCropChanged: onCropChanged
+            videoSize: videoSize
         )
-        return containerView
+        ultraCropView.onCropChanged = onCropChanged
+        return ultraCropView
     }
     
     func updateUIView(_ uiView: UIView, context: Context) {
-        if let containerView = uiView as? ProCropContainerUIView {
-            containerView.updateCropSettings(
-                cropRect: cropRect,
+        if let ultraCropView = uiView as? UltraCropView {
+            ultraCropView.updateCropSettings(
                 aspectRatio: aspectRatio,
                 showOverlay: showCropOverlay
             )
