@@ -103,10 +103,11 @@ class VideoEditorViewModel: ObservableObject {
             forInterval: interval,
             queue: .main
         ) { [weak self] time in
-            self?.currentPlaybackTime = time
-            
-            // トリミング範囲外になったらループ
-            if let self = self {
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.currentPlaybackTime = time
+                
+                // トリミング範囲外になったらループ
                 let endTime = self.editParameters.trimEndTime
                 if time >= endTime {
                     self.player?.seek(to: self.editParameters.trimStartTime)

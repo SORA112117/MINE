@@ -61,8 +61,69 @@ class LocalDataSource {
     
     func saveRecord(_ record: Record) async throws {
         let context = coreDataStack.viewContext
-        let _ = record.toEntity(context: context)
+        
+        // 重複チェック：同じタイトルと作成日時の記録が既に存在するかチェック
+        let request: NSFetchRequest<RecordEntity> = RecordEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "comment == %@ AND type == %@", 
+                                      record.title, record.type.rawValue)
+        request.fetchLimit = 1
+        
+        let existingEntities = try context.fetch(request)
+        
+        if !existingEntities.isEmpty {
+            // 既存の記録が見つかった場合
+            print("[LocalDataSource] Record with title '\(record.title)' already exists. Generating unique title.")
+            
+            // ユニークなタイトルを生成
+            let uniqueTitle = try await generateUniqueTitle(baseTitle: record.title, recordType: record.type, context: context)
+            
+            // 新しいタイトルでRecord構造体を再作成
+            let uniqueRecord = Record(
+                id: record.id,
+                type: record.type,
+                createdAt: record.createdAt,
+                updatedAt: record.updatedAt,
+                duration: record.duration,
+                fileURL: record.fileURL,
+                thumbnailURL: record.thumbnailURL,
+                title: uniqueTitle,
+                tags: record.tags,
+                templateId: record.templateId
+            )
+            
+            // ユニークなタイトルでEntityを作成
+            let _ = uniqueRecord.toEntity(context: context)
+            print("[LocalDataSource] Created record with unique title: '\(uniqueTitle)'")
+        } else {
+            // 重複していない場合は通常通り作成
+            let _ = record.toEntity(context: context)
+            print("[LocalDataSource] Created record with title: '\(record.title)'")
+        }
+        
         coreDataStack.save()
+    }
+    
+    /// ユニークなタイトルを生成する
+    private func generateUniqueTitle(baseTitle: String, recordType: RecordType, context: NSManagedObjectContext) async throws -> String {
+        var counter = 1
+        var uniqueTitle = baseTitle
+        
+        while try await titleExists(uniqueTitle, recordType: recordType, context: context) {
+            counter += 1
+            uniqueTitle = "\(baseTitle) (\(counter))"
+        }
+        
+        return uniqueTitle
+    }
+    
+    /// 指定されたタイトルが既に存在するかチェック
+    private func titleExists(_ title: String, recordType: RecordType, context: NSManagedObjectContext) async throws -> Bool {
+        let request: NSFetchRequest<RecordEntity> = RecordEntity.fetchRequest()
+        request.predicate = NSPredicate(format: "comment == %@ AND type == %@", title, recordType.rawValue)
+        request.fetchLimit = 1
+        
+        let count = try context.count(for: request)
+        return count > 0
     }
     
     func fetchRecords(with filter: RecordFilter) async throws -> [Record] {

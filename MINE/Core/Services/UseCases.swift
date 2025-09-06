@@ -107,7 +107,7 @@ class UpdateRecordUseCase {
     
     
     func updateTags(recordId: UUID, tags: Set<Tag>) async throws {
-        guard var record = try await recordRepository.fetchById(recordId) else {
+        guard let record = try await recordRepository.fetchById(recordId) else {
             throw UseCaseError.recordNotFound
         }
         
@@ -134,7 +134,7 @@ class UpdateRecordUseCase {
     }
     
     func updateTitle(recordId: UUID, title: String) async throws {
-        guard var record = try await recordRepository.fetchById(recordId) else {
+        guard let record = try await recordRepository.fetchById(recordId) else {
             throw UseCaseError.recordNotFound
         }
         

@@ -51,15 +51,17 @@ struct RecordingView: View {
             viewModel.stopCameraSession()
         }
         // 撮影・録音完了時にメタデータ入力画面へ遷移
-        .onChange(of: viewModel.recordingCompleted) { completed in
+        .onChange(of: viewModel.recordingCompleted) { _, completed in
             print("[RecordingView] recordingCompleted changed to: \(completed)")
             if completed {
                 print("[RecordingView] Setting navigateToMetadataInput = true")
+                // 確実にローディング状態を解除
+                viewModel.isProcessing = false
                 navigateToMetadataInput = true
             }
         }
         // 保存完了時にホームタブに戻る
-        .onChange(of: viewModel.savedCompleted) { saved in
+        .onChange(of: viewModel.savedCompleted) { _, saved in
             if saved {
                 viewModel.isProcessing = false
                 navigateToMetadataInput = false

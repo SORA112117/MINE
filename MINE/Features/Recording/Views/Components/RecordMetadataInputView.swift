@@ -66,8 +66,8 @@ struct RecordMetadataInputView: View {
                         saveRecord()
                     }
                     .fontWeight(.semibold)
-                    .foregroundColor(title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? Theme.gray3 : Theme.primary)
-                    .disabled(isLoading || title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    .foregroundColor(Theme.primary)
+                    .disabled(isLoading)
                 }
             }
             .onAppear {
@@ -174,16 +174,10 @@ struct RecordMetadataInputView: View {
     // MARK: - Title Section
     private var titleSection: some View {
         VStack(alignment: .leading, spacing: 12) {
-            HStack {
-                Text("タイトル")
-                    .font(.headline)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Theme.text)
-                
-                Text("*")
-                    .font(.headline)
-                    .foregroundColor(Theme.error)
-            }
+            Text("タイトル（任意）")
+                .font(.headline)
+                .fontWeight(.semibold)
+                .foregroundColor(Theme.text)
             
             VStack(alignment: .leading, spacing: 8) {
                 TextField(todayDateString, text: $title, axis: .vertical)
@@ -196,19 +190,15 @@ struct RecordMetadataInputView: View {
                             .fill(Theme.gray1)
                             .overlay(
                                 RoundedRectangle(cornerRadius: 8)
-                                    .stroke(title.isEmpty ? Theme.error.opacity(0.3) : Theme.gray3, lineWidth: 1)
+                                    .stroke(Theme.gray3, lineWidth: 1)
                             )
                     )
                 
                 HStack {
                     if title.isEmpty {
-                        Text("タイトルは必須項目です")
+                        Text("空の場合は「\(todayDateString)」が設定されます")
                             .font(.caption2)
-                            .foregroundColor(Theme.error)
-                    } else {
-                        Text("入力完了")
-                            .font(.caption2)
-                            .foregroundColor(Theme.primary)
+                            .foregroundColor(Theme.gray4)
                     }
                     
                     Spacer()
@@ -417,8 +407,9 @@ struct RecordMetadataInputView: View {
         isLoading = true
         
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
+        let finalTitle = trimmedTitle.isEmpty ? todayDateString : trimmedTitle
         let metadata = RecordMetadata(
-            title: trimmedTitle,
+            title: finalTitle,
             tags: selectedTag != nil ? [selectedTag!] : [] // 単一タグまたは空配列
         )
         

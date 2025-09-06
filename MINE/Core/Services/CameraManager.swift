@@ -1,4 +1,4 @@
-import AVFoundation
+@preconcurrency import AVFoundation
 import UIKit
 import Combine
 
@@ -23,6 +23,8 @@ class CameraManager: NSObject, ObservableObject {
     private var photoOutput: AVCapturePhotoOutput?
     private var currentVideoURL: URL?
     private var recordingTimer: Timer?
+    // PhotoCaptureDelegateを強い参照で保持するための辞書
+    private var photoDelegates: [UUID: PhotoCaptureDelegate] = [:]
     private var maxRecordingDuration: TimeInterval {
         KeychainService.shared.isProVersion ? proVersionVideoLimit : freeVersionVideoLimit
     }
@@ -183,24 +185,22 @@ class CameraManager: NSObject, ObservableObject {
     
     // MARK: - Session Control
     func startSession() {
-        Task {
-            await MainActor.run {
-                if !session.isRunning {
-                    sessionQueue.async { [weak session] in
-                        session?.startRunning()
-                    }
+        Task { @MainActor in
+            if !session.isRunning {
+                let currentSession = session
+                sessionQueue.async {
+                    currentSession.startRunning()
                 }
             }
         }
     }
     
     func stopSession() {
-        Task {
-            await MainActor.run {
-                if session.isRunning {
-                    sessionQueue.async { [weak session] in
-                        session?.stopRunning()
-                    }
+        Task { @MainActor in
+            if session.isRunning {
+                let currentSession = session
+                sessionQueue.async {
+                    currentSession.stopRunning()
                 }
             }
         }
@@ -332,14 +332,19 @@ class CameraManager: NSObject, ObservableObject {
         recordingTimer?.invalidate()
         recordingTimer = nil
         
+        // Photo delegatesのクリーンアップ（Main actorで実行）
+        Task { @MainActor [photoDelegates] in
+            _ = photoDelegates // 参照を保持してクリーンアップ
+        }
+        
         // セッションをバックグラウンドで安全にクリーンアップ
-        sessionQueue.async { [weak session] in
-            guard let session = session else { return }
-            if session.isRunning {
-                session.stopRunning()
+        let currentSession = session
+        sessionQueue.async {
+            if currentSession.isRunning {
+                currentSession.stopRunning()
             }
-            session.inputs.forEach { session.removeInput($0) }
-            session.outputs.forEach { session.removeOutput($0) }
+            currentSession.inputs.forEach { currentSession.removeInput($0) }
+            currentSession.outputs.forEach { currentSession.removeOutput($0) }
         }
     }
 }
@@ -361,16 +366,34 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
         }
     }
     
-    // MARK: - Photo Capture
+    // MARK: - Photo Capture  
     func capturePhoto() async throws -> URL {
         guard let photoOutput = photoOutput else {
             throw CameraError.deviceNotAvailable
         }
         
-        return try await withCheckedThrowingContinuation { continuation in
+        return try await withCheckedThrowingContinuation { [weak self] continuation in
             let settings = AVCapturePhotoSettings()
-            let delegate = PhotoCaptureDelegate(continuation: continuation)
-            photoOutput.capturePhoto(with: settings, delegate: delegate)
+            let delegateId = UUID()
+            
+            let delegate = PhotoCaptureDelegate(continuation: continuation) { completedDelegateId in
+                // Main actorで実行してdelegateを辞書から削除
+                Task { @MainActor [weak self] in
+                    print("[CameraManager] Removing delegate \(completedDelegateId)")
+                    self?.photoDelegates.removeValue(forKey: completedDelegateId)
+                }
+            }
+            
+            // Main actorでdelegateを強い参照で保持
+            Task { @MainActor [weak self] in
+                guard let self = self else { return }
+                self.photoDelegates[delegateId] = delegate
+                print("[CameraManager] Starting photo capture with delegate \(delegateId)")
+                print("[CameraManager] Active delegates: \(self.photoDelegates.count)")
+                
+                // メインアクター上でcapturePhotoを実行
+                photoOutput.capturePhoto(with: settings, delegate: delegate)
+            }
         }
     }
 }
@@ -378,18 +401,29 @@ extension CameraManager: AVCaptureFileOutputRecordingDelegate {
 // MARK: - Photo Capture Delegate
 private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
     private let continuation: CheckedContinuation<URL, Error>
+    private let completionHandler: (UUID) -> Void
+    private let delegateId = UUID()
     
-    init(continuation: CheckedContinuation<URL, Error>) {
+    init(continuation: CheckedContinuation<URL, Error>, completionHandler: @escaping (UUID) -> Void) {
         self.continuation = continuation
+        self.completionHandler = completionHandler
+        super.init()
     }
     
     func photoOutput(_ output: AVCapturePhotoOutput, didFinishProcessingPhoto photo: AVCapturePhoto, error: Error?) {
+        defer {
+            // 完了時には必ずcompletionHandlerを呼び出してdelegateを解放
+            completionHandler(delegateId)
+        }
+        
         if let error = error {
+            print("[PhotoCaptureDelegate] Photo capture failed with error: \(error)")
             continuation.resume(throwing: error)
             return
         }
         
         guard let imageData = photo.fileDataRepresentation() else {
+            print("[PhotoCaptureDelegate] Failed to get image data")
             continuation.resume(throwing: CameraManager.CameraError.recordingFailed("画像データの取得に失敗しました"))
             return
         }
@@ -401,7 +435,9 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         // ディレクトリが存在しない場合は作成
         do {
             try FileManager.default.createDirectory(at: recordsDirectory, withIntermediateDirectories: true)
+            print("[PhotoCaptureDelegate] Created directory: \(recordsDirectory)")
         } catch {
+            print("[PhotoCaptureDelegate] Failed to create directory: \(error)")
             continuation.resume(throwing: error)
             return
         }
@@ -410,8 +446,10 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
         
         do {
             try imageData.write(to: fileURL)
+            print("[PhotoCaptureDelegate] Successfully saved photo to: \(fileURL)")
             continuation.resume(returning: fileURL)
         } catch {
+            print("[PhotoCaptureDelegate] Failed to save photo: \(error)")
             continuation.resume(throwing: error)
         }
     }

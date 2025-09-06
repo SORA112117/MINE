@@ -285,7 +285,7 @@ class RecordingViewModel: ObservableObject {
             return
         }
         
-        let audioStatus = AVAudioSession.sharedInstance().recordPermission
+        let audioStatus = AVAudioApplication.shared.recordPermission
         
         switch audioStatus {
         case .granted:
@@ -353,6 +353,7 @@ class RecordingViewModel: ObservableObject {
             return
         }
         
+        print("[RecordingViewModel] capturePhoto called - setting isProcessing = true")
         isProcessing = true
         errorMessage = nil // エラーメッセージをクリア
         
@@ -375,7 +376,8 @@ class RecordingViewModel: ObservableObject {
                 
                 await MainActor.run {
                     self.errorMessage = "写真の撮影に失敗しました: \(error.localizedDescription)"
-                    self.isProcessing = false // 必ずリセット
+                    self.isProcessing = false // エラー時には必ずリセット
+                    print("[RecordingViewModel] Photo capture error - isProcessing set to false")
                 }
             }
         }
@@ -387,14 +389,16 @@ class RecordingViewModel: ObservableObject {
         
         lastRecordedURL = url
         recordedVideoURL = url
-        isProcessing = false
         
         print("[RecordingViewModel] Setting recordingCompleted = true")
         
         // 写真の場合はクロッピング編集が可能なので、メタデータ入力画面を先に表示
         recordingCompleted = true
         
-        print("[RecordingViewModel] Photo completion handling finished")
+        // isProcessingは必ずここでリセット（recordingCompletedが設定された後）
+        isProcessing = false
+        
+        print("[RecordingViewModel] Photo completion handling finished - isProcessing set to false")
     }
     
     // MARK: - Recording Completion
