@@ -50,9 +50,14 @@ struct RecordMetadataInputView: View {
             .toolbar {
                 ToolbarItem(placement: .navigationBarLeading) {
                     Button("キャンセル") {
-                        // キャンセル時はデータを破棄
+                        // キャンセル時はデータを破棄して録画画面全体を閉じる
                         viewModel.discardRecording()
-                        dismiss()
+                        // 録画画面全体を閉じる
+                        if let presentationMode = viewModel.presentationMode {
+                            presentationMode.wrappedValue.dismiss()
+                        } else {
+                            dismiss()
+                        }
                     }
                 }
                 
@@ -181,7 +186,7 @@ struct RecordMetadataInputView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                TextField("記録のタイトルを入力してください", text: $title, axis: .vertical)
+                TextField(todayDateString, text: $title, axis: .vertical)
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.body)
                     .lineLimit(2, reservesSpace: true)
@@ -348,6 +353,13 @@ struct RecordMetadataInputView: View {
     }
     
     // MARK: - Computed Properties
+    private var todayDateString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年MM月dd日の記録"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter.string(from: Date())
+    }
+    
     private var estimatedFileSize: String {
         switch recordType {
         case .video:

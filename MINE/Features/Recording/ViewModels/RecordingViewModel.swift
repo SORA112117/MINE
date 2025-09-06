@@ -31,6 +31,9 @@ class RecordingViewModel: ObservableObject {
     @Published var currentRecordingTime: TimeInterval = 0  // 録画時間を直接管理
     @Published var showRecordingLimitDialog = false  // 5秒制限達成時のダイアログ表示
     
+    // Presentation Mode for dismissing entire recording flow
+    var presentationMode: Binding<PresentationMode>?
+    
     // 遅延初期化に変更してクラッシュを防ぐ
     @Published var cameraManager: CameraManager?
     @Published var audioRecorderService: AudioRecorderService?

@@ -9,6 +9,7 @@ struct HomeView: View {
     @State private var showingLibraryMetadataInput = false
     @State private var selectedLibraryURL: URL?
     @State private var selectedLibraryType: RecordType = .image
+    @State private var isProcessingLibraryItem = false
     
     var body: some View {
         ScrollView {
@@ -139,33 +140,51 @@ struct HomeView: View {
                 .fontWeight(.semibold)
                 .foregroundColor(Theme.text)
             
-            PhotosPicker(
-                selection: $selectedPhotoItems,
-                maxSelectionCount: 10,
-                matching: .any(of: [.images, .videos])
-            ) {
+            if isProcessingLibraryItem {
                 HStack {
-                    Image(systemName: "photo.on.rectangle")
-                        .font(.title2)
-                        .foregroundColor(Theme.primary)
+                    ProgressView()
+                        .progressViewStyle(CircularProgressViewStyle())
+                        .scaleEffect(0.8)
                     
-                    Text("ライブラリから選択")
+                    Text("処理中...")
                         .font(.headline)
                         .fontWeight(.medium)
-                        .foregroundColor(Theme.text)
+                        .foregroundColor(Theme.gray5)
                     
                     Spacer()
-                    
-                    Image(systemName: "chevron.right")
-                        .font(.caption)
-                        .foregroundColor(Theme.gray4)
                 }
                 .padding()
                 .background(Theme.gray1)
                 .cornerRadius(Constants.UI.cornerRadius)
-            }
-            .onChange(of: selectedPhotoItems) {
-                handleSelectedPhotos(selectedPhotoItems)
+            } else {
+                PhotosPicker(
+                    selection: $selectedPhotoItems,
+                    maxSelectionCount: 1,
+                    matching: .any(of: [.images, .videos])
+                ) {
+                    HStack {
+                        Image(systemName: "photo.on.rectangle")
+                            .font(.title2)
+                            .foregroundColor(Theme.primary)
+                        
+                        Text("ライブラリから選択")
+                            .font(.headline)
+                            .fontWeight(.medium)
+                            .foregroundColor(Theme.text)
+                        
+                        Spacer()
+                        
+                        Image(systemName: "chevron.right")
+                            .font(.caption)
+                            .foregroundColor(Theme.gray4)
+                    }
+                    .padding()
+                    .background(Theme.gray1)
+                    .cornerRadius(Constants.UI.cornerRadius)
+                }
+                .onChange(of: selectedPhotoItems) {
+                    handleSelectedPhotos(selectedPhotoItems)
+                }
             }
         }
         .padding()
@@ -216,8 +235,14 @@ struct HomeView: View {
     
     // MARK: - Photo Handling
     private func handleSelectedPhotos(_ items: [PhotosPickerItem]) {
+        guard !items.isEmpty else { return }
+        
         Task {
-            // 最初のアイテムのみを処理（複数選択を一つずつ処理）
+            await MainActor.run {
+                isProcessingLibraryItem = true
+            }
+            
+            // 最初のアイテムのみを処理
             if let firstItem = items.first {
                 do {
                     // 写真/動画を一時的にローカルに保存
@@ -237,11 +262,18 @@ struct HomeView: View {
                         await MainActor.run {
                             selectedLibraryURL = tempURL
                             selectedLibraryType = isVideo ? .video : .image
-                            showingLibraryMetadataInput = true
+                            isProcessingLibraryItem = false
+                            // 少し遅延を入れてスムーズな遷移
+                            DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                                showingLibraryMetadataInput = true
+                            }
                         }
                     }
                 } catch {
                     print("Failed to load photo: \(error)")
+                    await MainActor.run {
+                        isProcessingLibraryItem = false
+                    }
                 }
             }
             

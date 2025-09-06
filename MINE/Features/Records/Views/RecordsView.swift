@@ -304,20 +304,36 @@ struct RecordThumbnailCard: View {
                             }
                         )
                     
-                    // 選択インジケーター
-                    if isSelectionMode {
-                        VStack {
-                            HStack {
-                                Spacer()
-                                Image(systemName: isSelected ? "checkmark.circle.fill" : "circle")
-                                    .foregroundColor(isSelected ? Theme.primary : .white)
-                                    .background(Circle().fill(Color.white.opacity(0.8)))
-                                    .font(.title3)
-                            }
+                    // 選択インジケーター（常に表示、選択モードでのみ見える）
+                    VStack {
+                        HStack {
                             Spacer()
+                            ZStack {
+                                Circle()
+                                    .fill(isSelectionMode && isSelected ? Theme.primary : (isSelectionMode ? Color.white : Theme.background))
+                                    .frame(width: 22, height: 22)
+                                
+                                Circle()
+                                    .stroke(
+                                        isSelectionMode ? (isSelected ? Theme.primary : Theme.gray4) : Theme.background, 
+                                        lineWidth: 1.5
+                                    )
+                                    .frame(width: 22, height: 22)
+                                
+                                if isSelectionMode && isSelected {
+                                    Image(systemName: "checkmark")
+                                        .foregroundColor(.white)
+                                        .font(.system(size: 10, weight: .bold))
+                                }
+                            }
+                            .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 0.5)
+                            .opacity(isSelectionMode ? 1.0 : 0.0)
+                            .scaleEffect(isSelectionMode ? 1.0 : 0.8)
+                            .animation(.easeInOut(duration: 0.2), value: isSelectionMode)
                         }
-                        .padding(8)
+                        Spacer()
                     }
+                    .padding(6)
                     
                     // 録画時間表示（動画・音声の場合）
                     if let duration = record.formattedDuration {
@@ -374,16 +390,26 @@ struct RecordThumbnailCard: View {
             }
         }
         .buttonStyle(PlainButtonStyle())
-        .background(Color.white)
+        .background(
+            isSelectionMode && isSelected ?
+            Theme.primary.opacity(0.05) :
+            Color.white
+        )
         .cornerRadius(Constants.UI.cornerRadius)
+        .overlay(
+            isSelectionMode && isSelected ?
+            RoundedRectangle(cornerRadius: Constants.UI.cornerRadius)
+                .stroke(Theme.primary, lineWidth: 2)
+            : nil
+        )
         .shadow(
-            color: Theme.shadowColor,
-            radius: isSelected ? 4 : 2,
+            color: isSelectionMode && isSelected ? Theme.primary.opacity(0.2) : Theme.shadowColor,
+            radius: isSelectionMode && isSelected ? 6 : 2,
             x: 0,
             y: 2
         )
-        .scaleEffect(isSelected ? 0.95 : 1.0)
-        .animation(.easeInOut(duration: 0.1), value: isSelected)
+        .scaleEffect(isSelectionMode && isSelected ? 0.98 : 1.0)
+        .animation(.easeInOut(duration: 0.2), value: isSelected)
     }
 }
 

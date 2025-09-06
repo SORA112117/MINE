@@ -178,7 +178,7 @@ struct LibraryMetadataInputView: View {
             }
             
             VStack(alignment: .leading, spacing: 8) {
-                TextField("記録のタイトルを入力してください", text: $title, axis: .vertical)
+                TextField(todayDateString, text: $title, axis: .vertical)
                     .textFieldStyle(PlainTextFieldStyle())
                     .font(.body)
                     .lineLimit(2, reservesSpace: true)
@@ -344,6 +344,13 @@ struct LibraryMetadataInputView: View {
     }
     
     // MARK: - Computed Properties
+    private var todayDateString: String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy年MM月dd日の記録"
+        formatter.locale = Locale(identifier: "ja_JP")
+        return formatter.string(from: Date())
+    }
+    
     private var estimatedFileSize: String {
         // 実際のファイルサイズを取得
         if let attributes = try? FileManager.default.attributesOfItem(atPath: fileURL.path),

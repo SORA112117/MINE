@@ -195,10 +195,7 @@ class RecordsViewModel: ObservableObject {
         } else {
             selectedRecords.insert(recordId)
         }
-        
-        if selectedRecords.isEmpty {
-            isSelectionMode = false
-        }
+        // 選択数がゼロになっても選択モードを維持
     }
     
     func enterSelectionMode() {

@@ -5,8 +5,9 @@ struct RecordingView: View {
     @StateObject var viewModel: RecordingViewModel
     @EnvironmentObject var appCoordinator: AppCoordinator
     @Environment(\.dismiss) private var dismiss
+    @Environment(\.presentationMode) var presentationMode
     @State private var showingVideoEditor = false
-    @State private var showingMetadataInput = false
+    @State private var navigateToMetadataInput = false
     
     var body: some View {
         ZStack {
@@ -43,32 +44,32 @@ struct RecordingView: View {
         .navigationBarTitleDisplayMode(.inline)
         .navigationBarHidden(true)
         .onAppear {
+            viewModel.presentationMode = presentationMode
             viewModel.startCameraSession()
         }
         .onDisappear {
             viewModel.stopCameraSession()
         }
-        // 撮影・録音完了時にメタデータ入力画面を表示
+        // 撮影・録音完了時にメタデータ入力画面へ遷移
         .onChange(of: viewModel.recordingCompleted) { completed in
             if completed {
-                showingMetadataInput = true
+                navigateToMetadataInput = true
             }
         }
         // 保存完了時にホームタブに戻る
         .onChange(of: viewModel.savedCompleted) { saved in
             if saved {
                 viewModel.isProcessing = false
-                showingMetadataInput = false
-                // まず画面を閉じる
+                navigateToMetadataInput = false
+                // 録画画面全体を閉じてホームに戻る
                 dismiss()
-                // その後ホームタブに遷移
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
                     appCoordinator.showHome()
                 }
             }
         }
-        // VideoEditorはメタデータ入力画面から表示するように変更
-        .sheet(isPresented: $showingMetadataInput) {
+        // NavigationLinkでメタデータ入力画面に遷移
+        .navigationDestination(isPresented: $navigateToMetadataInput) {
             if let recordURL = viewModel.recordedVideoURL {
                 RecordMetadataInputView(
                     viewModel: viewModel,
@@ -77,9 +78,9 @@ struct RecordingView: View {
                     onSave: { recordData in
                         // メタデータ付きで記録を保存
                         viewModel.saveRecordingWithMetadata(recordData: recordData)
-                        // dismissはRecordMetadataInputView側で処理
                     }
                 )
+                .navigationBarBackButtonHidden(true)
             }
         }
         .alert("録画時間の上限に達しました", isPresented: $viewModel.showRecordingLimitDialog) {
