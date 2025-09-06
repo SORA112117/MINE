@@ -59,7 +59,12 @@ struct RecordingView: View {
             if saved {
                 viewModel.isProcessing = false
                 showingMetadataInput = false
-                appCoordinator.showHome()
+                // まず画面を閉じる
+                dismiss()
+                // その後ホームタブに遷移
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
+                    appCoordinator.showHome()
+                }
             }
         }
         // VideoEditorはメタデータ入力画面から表示するように変更

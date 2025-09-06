@@ -6,6 +6,9 @@ struct HomeView: View {
     @EnvironmentObject var appCoordinator: AppCoordinator
     @State private var showingPhotoPicker = false
     @State private var selectedPhotoItems: [PhotosPickerItem] = []
+    @State private var showingLibraryMetadataInput = false
+    @State private var selectedLibraryURL: URL?
+    @State private var selectedLibraryType: RecordType = .image
     
     var body: some View {
         ScrollView {
@@ -32,6 +35,41 @@ struct HomeView: View {
         }
         .onAppear {
             viewModel.loadData()
+        }
+        .sheet(isPresented: $showingLibraryMetadataInput) {
+            if let url = selectedLibraryURL {
+                LibraryMetadataInputView(
+                    fileURL: url,
+                    recordType: selectedLibraryType,
+                    onSave: { title, tags in
+                        // 保存処理
+                        Task {
+                            do {
+                                try await viewModel.createRecordWithMetadata(
+                                    fileURL: url,
+                                    type: selectedLibraryType,
+                                    title: title,
+                                    tags: tags
+                                )
+                                await MainActor.run {
+                                    showingLibraryMetadataInput = false
+                                    selectedLibraryURL = nil
+                                }
+                            } catch {
+                                print("Failed to save library item: \(error)")
+                            }
+                        }
+                    },
+                    onCancel: {
+                        // キャンセル時は一時ファイルを削除
+                        if let url = selectedLibraryURL {
+                            try? FileManager.default.removeItem(at: url)
+                        }
+                        showingLibraryMetadataInput = false
+                        selectedLibraryURL = nil
+                    }
+                )
+            }
         }
     }
     
@@ -179,11 +217,28 @@ struct HomeView: View {
     // MARK: - Photo Handling
     private func handleSelectedPhotos(_ items: [PhotosPickerItem]) {
         Task {
-            for item in items {
+            // 最初のアイテムのみを処理（複数選択を一つずつ処理）
+            if let firstItem = items.first {
                 do {
-                    // 写真/動画を一時的にローカルに保存して記録として追加
-                    if let data = try await item.loadTransferable(type: Data.self) {
-                        await processPhotoData(data, item: item)
+                    // 写真/動画を一時的にローカルに保存
+                    if let data = try await firstItem.loadTransferable(type: Data.self) {
+                        // メディアタイプを判定
+                        let isVideo = firstItem.supportedContentTypes.contains { $0.conforms(to: .movie) }
+                        
+                        // 一時ファイルを作成
+                        let tempDirectory = FileManager.default.temporaryDirectory
+                        let fileName = "imported_\(Date().timeIntervalSince1970).\(isVideo ? "mp4" : "jpg")"
+                        let tempURL = tempDirectory.appendingPathComponent(fileName)
+                        
+                        // データを一時ファイルに書き込み
+                        try data.write(to: tempURL)
+                        
+                        // メタデータ入力画面を表示するための準備
+                        await MainActor.run {
+                            selectedLibraryURL = tempURL
+                            selectedLibraryType = isVideo ? .video : .image
+                            showingLibraryMetadataInput = true
+                        }
                     }
                 } catch {
                     print("Failed to load photo: \(error)")
@@ -197,24 +252,6 @@ struct HomeView: View {
         }
     }
     
-    @MainActor
-    private func processPhotoData(_ data: Data, item: PhotosPickerItem) async {
-        do {
-            // PhotosPickerItemからメディアタイプを判定
-            let isVideo = item.supportedContentTypes.contains { $0.conforms(to: .movie) }
-            
-            print("Processing \(isVideo ? "video" : "photo") data of size: \(data.count) bytes")
-            
-            // ViewModelの記録作成メソッドを呼び出し
-            try await viewModel.createRecordFromPhotoData(data, isVideo: isVideo)
-            
-            print("Successfully created record from \(isVideo ? "video" : "photo")")
-            
-        } catch {
-            print("Failed to create record from photo: \(error)")
-            // エラーハンドリング - 実際のアプリではユーザーにエラーメッセージを表示
-        }
-    }
     
     // MARK: - Computed Properties
     private var todayDateString: String {

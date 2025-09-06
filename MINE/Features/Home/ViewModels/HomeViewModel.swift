@@ -95,6 +95,24 @@ class HomeViewModel: ObservableObject {
         await loadDataAsync()
     }
     
+    // MARK: - Record Creation with Metadata
+    func createRecordWithMetadata(fileURL: URL, type: RecordType, title: String, tags: [Tag]) async throws {
+        // CreateRecordUseCaseを使用して記録を作成
+        let _ = try await createRecordUseCase.execute(
+            type: type,
+            fileURL: fileURL,
+            duration: nil, // 写真・動画の場合はnull（必要に応じて計算）
+            title: title,
+            tags: tags
+        )
+        
+        // 統計を再読み込み
+        await loadDataAsync()
+        
+        // 保存完了通知を送信
+        NotificationCenter.default.post(name: .recordSaved, object: nil)
+    }
+    
     // MARK: - Private Methods
     
     private func setupBindings() {
