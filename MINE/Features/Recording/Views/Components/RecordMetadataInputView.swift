@@ -355,7 +355,7 @@ struct RecordMetadataInputView: View {
     // MARK: - Computed Properties
     private var todayDateString: String {
         let formatter = DateFormatter()
-        formatter.dateFormat = "yyyy年MM月dd日の記録"
+        formatter.dateFormat = "yyyy/MM/dd"
         formatter.locale = Locale(identifier: "ja_JP")
         return formatter.string(from: Date())
     }

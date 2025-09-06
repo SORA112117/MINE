@@ -394,10 +394,19 @@ private class PhotoCaptureDelegate: NSObject, AVCapturePhotoCaptureDelegate {
             return
         }
         
-        // ファイルに保存
-        let filename = "photo_\(Date().timeIntervalSince1970).jpg"
-        let documentsPath = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask)[0]
-        let fileURL = documentsPath.appendingPathComponent(filename)
+        // ファイルに保存（動画と同じディレクトリに保存）
+        let filename = "MINE_photo_\(Date().timeIntervalSince1970).jpg"
+        let recordsDirectory = Constants.Storage.recordsDirectory
+        
+        // ディレクトリが存在しない場合は作成
+        do {
+            try FileManager.default.createDirectory(at: recordsDirectory, withIntermediateDirectories: true)
+        } catch {
+            continuation.resume(throwing: error)
+            return
+        }
+        
+        let fileURL = recordsDirectory.appendingPathComponent(filename)
         
         do {
             try imageData.write(to: fileURL)

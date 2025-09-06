@@ -132,24 +132,39 @@ extension Record {
         entity.templateId = templateId
         
         
-        // タグの設定 - リレーションを使用
+        // タグの設定 - より安全な方法で実行
         if !tags.isEmpty {
-            let tagEntities = tags.compactMap { tag -> TagEntity? in
+            var tagEntities: [TagEntity] = []
+            
+            for tag in tags {
                 let tagRequest: NSFetchRequest<TagEntity> = TagEntity.fetchRequest()
                 tagRequest.predicate = NSPredicate(format: "id == %@", tag.id as CVarArg)
+                tagRequest.fetchLimit = 1
                 
-                if let existingTag = try? context.fetch(tagRequest).first {
-                    return existingTag
-                } else {
-                    // タグが存在しない場合は作成
+                do {
+                    let existingTags = try context.fetch(tagRequest)
+                    if let existingTag = existingTags.first {
+                        tagEntities.append(existingTag)
+                    } else {
+                        // タグが存在しない場合は作成
+                        let newTag = TagEntity(context: context)
+                        newTag.id = tag.id
+                        newTag.name = tag.name
+                        newTag.color = tag.color
+                        newTag.usageCount = Int32(tag.usageCount)
+                        tagEntities.append(newTag)
+                    }
+                } catch {
+                    // エラーが発生した場合、新しいタグを作成
                     let newTag = TagEntity(context: context)
                     newTag.id = tag.id
                     newTag.name = tag.name
                     newTag.color = tag.color
                     newTag.usageCount = Int32(tag.usageCount)
-                    return newTag
+                    tagEntities.append(newTag)
                 }
             }
+            
             entity.tags = NSSet(array: tagEntities)
         }
         

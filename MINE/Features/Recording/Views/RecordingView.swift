@@ -52,7 +52,9 @@ struct RecordingView: View {
         }
         // 撮影・録音完了時にメタデータ入力画面へ遷移
         .onChange(of: viewModel.recordingCompleted) { completed in
+            print("[RecordingView] recordingCompleted changed to: \(completed)")
             if completed {
+                print("[RecordingView] Setting navigateToMetadataInput = true")
                 navigateToMetadataInput = true
             }
         }

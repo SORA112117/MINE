@@ -211,8 +211,8 @@ class RecordingViewModel: ObservableObject {
         case .audio:
             startAudioRecording()
         case .image:
-            // 写真撮影実装（後で追加）
-            errorMessage = "写真撮影機能は開発中です"
+            // 写真の場合は即座に撮影
+            capturePhoto()
         }
     }
     
@@ -354,11 +354,16 @@ class RecordingViewModel: ObservableObject {
         }
         
         isProcessing = true
+        errorMessage = nil // エラーメッセージをクリア
         
         Task {
             do {
+                print("[RecordingViewModel] Starting photo capture...")
+                
                 // 写真を撮影してファイルに保存
                 let photoURL = try await cameraManager.capturePhoto()
+                
+                print("[RecordingViewModel] Photo capture completed: \(photoURL)")
                 
                 await MainActor.run {
                     self.recordedVideoURL = photoURL // 画像URLを保存
@@ -366,9 +371,11 @@ class RecordingViewModel: ObservableObject {
                 }
                 
             } catch {
+                print("[RecordingViewModel] Photo capture failed: \(error)")
+                
                 await MainActor.run {
                     self.errorMessage = "写真の撮影に失敗しました: \(error.localizedDescription)"
-                    self.isProcessing = false
+                    self.isProcessing = false // 必ずリセット
                 }
             }
         }
@@ -376,12 +383,18 @@ class RecordingViewModel: ObservableObject {
     
     // 写真撮影完了処理
     private func handlePhotoCompleted(url: URL) {
+        print("[RecordingViewModel] Photo completed - URL: \(url)")
+        
         lastRecordedURL = url
         recordedVideoURL = url
         isProcessing = false
         
+        print("[RecordingViewModel] Setting recordingCompleted = true")
+        
         // 写真の場合はクロッピング編集が可能なので、メタデータ入力画面を先に表示
         recordingCompleted = true
+        
+        print("[RecordingViewModel] Photo completion handling finished")
     }
     
     // MARK: - Recording Completion

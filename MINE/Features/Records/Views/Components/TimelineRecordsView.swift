@@ -132,6 +132,8 @@ struct TimelineRecordsView: View {
                 TagRowSection(
                     tagName: tagName,
                     records: groupedRecordsByTag[tagName] ?? [],
+                    isSelectionMode: viewModel.isSelectionMode,
+                    selectedRecords: viewModel.selectedRecords,
                     onRecordTap: onRecordTap
                 )
             }
@@ -569,6 +571,8 @@ struct FolderSection: View {
 struct TagRowSection: View {
     let tagName: String
     let records: [Record]
+    let isSelectionMode: Bool
+    let selectedRecords: Set<UUID>
     let onRecordTap: (Record) -> Void
     
     var body: some View {
@@ -593,6 +597,8 @@ struct TagRowSection: View {
                     ForEach(records.sorted { $0.createdAt > $1.createdAt }, id: \.id) { record in
                         CompactRecordCard(
                             record: record,
+                            isSelected: selectedRecords.contains(record.id),
+                            isSelectionMode: isSelectionMode,
                             onTap: { onRecordTap(record) }
                         )
                     }
@@ -611,20 +617,69 @@ struct TagRowSection: View {
 // MARK: - Compact Record Card
 struct CompactRecordCard: View {
     let record: Record
+    let isSelected: Bool
+    let isSelectionMode: Bool
     let onTap: () -> Void
     
     var body: some View {
-        Button(action: onTap) {
+        Button(action: {
+            if isSelectionMode {
+                let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                impactFeedback.impactOccurred()
+            }
+            onTap()
+        }) {
             VStack(spacing: 4) {
                 // サムネイル/アイコン（小型化）
-                RoundedRectangle(cornerRadius: 6)
-                    .fill(Theme.gray1)
-                    .frame(width: 60, height: 60)
-                    .overlay(
-                        Image(systemName: record.type.systemImage)
-                            .font(.body)
-                            .foregroundColor(Theme.primary)
-                    )
+                ZStack {
+                    RoundedRectangle(cornerRadius: 6)
+                        .fill(Theme.gray1)
+                        .frame(width: 60, height: 60)
+                        .overlay(
+                            Image(systemName: record.type.systemImage)
+                                .font(.body)
+                                .foregroundColor(Theme.primary)
+                        )
+                        .overlay(
+                            // 選択時のオーバーレイ
+                            isSelectionMode && isSelected ?
+                            RoundedRectangle(cornerRadius: 6)
+                                .fill(Theme.primary.opacity(0.3))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 6)
+                                        .stroke(Theme.primary, lineWidth: 2)
+                                )
+                            : nil
+                        )
+                    
+                    // 選択インジケーター
+                    if isSelectionMode {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                ZStack {
+                                    Circle()
+                                        .fill(isSelected ? Theme.primary : Color.white)
+                                        .frame(width: 16, height: 16)
+                                    
+                                    Circle()
+                                        .stroke(isSelected ? Theme.primary : Theme.gray4, lineWidth: 1)
+                                        .frame(width: 16, height: 16)
+                                    
+                                    if isSelected {
+                                        Image(systemName: "checkmark")
+                                            .foregroundColor(.white)
+                                            .font(.system(size: 8, weight: .bold))
+                                    }
+                                }
+                                .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 0.5)
+                            }
+                            Spacer()
+                        }
+                        .frame(width: 60, height: 60)
+                        .padding(2)
+                    }
+                }
                 
                 // 記録情報（コンパクト化）
                 VStack(spacing: 2) {
@@ -640,6 +695,14 @@ struct CompactRecordCard: View {
                 }
             }
             .frame(width: 76)
+            .background(
+                isSelectionMode && isSelected ?
+                Theme.primary.opacity(0.05) :
+                Color.clear
+            )
+            .cornerRadius(8)
+            .scaleEffect(isSelectionMode && isSelected ? 0.98 : 1.0)
+            .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
     }
