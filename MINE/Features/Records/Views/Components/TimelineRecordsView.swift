@@ -595,7 +595,7 @@ struct TagRowSection: View {
                 .padding(.horizontal)
                 .padding(.vertical, 4)  // 上下に余白を追加して見切れを防ぐ
             }
-            .frame(minHeight: 138)  // 最小高さを設定（カード高さ + パディング）
+            .frame(minHeight: 142)  // 最小高さを設定（カード高さ94pt + テキスト + パディング）
         }
         .padding(.vertical, 10)
         .padding(.horizontal, 12)
@@ -626,6 +626,14 @@ struct CompactRecordCard: View {
             VStack(spacing: 4) {
                 // サムネイル/アイコン
                 ZStack {
+                    // 背景レイヤー（選択時の枠線用スペースを確保）
+                    if isSelectionMode && isSelected {
+                        RoundedRectangle(cornerRadius: 8)
+                            .stroke(Theme.primary, lineWidth: 2)
+                            .frame(width: 92, height: 92)
+                    }
+                    
+                    // メインコンテンツ
                     RoundedRectangle(cornerRadius: 8)
                         .fill(Theme.gray1)
                         .frame(width: 90, height: 90)
@@ -633,14 +641,10 @@ struct CompactRecordCard: View {
                             thumbnailContent
                         )
                         .overlay(
-                            // 選択時のオーバーレイ
+                            // 選択時の半透明オーバーレイ
                             isSelectionMode && isSelected ?
                             RoundedRectangle(cornerRadius: 8)
                                 .fill(Theme.primary.opacity(0.2))
-                                .overlay(
-                                    RoundedRectangle(cornerRadius: 8)
-                                        .stroke(Theme.primary, lineWidth: 2)
-                                )
                             : nil
                         )
                     
@@ -673,6 +677,7 @@ struct CompactRecordCard: View {
                         .frame(width: 90, height: 90)
                     }
                 }
+                .frame(width: 94, height: 94)  // 枠線分の余白を確保
                 
                 // 記録情報（コンパクト化）
                 VStack(spacing: 2) {
