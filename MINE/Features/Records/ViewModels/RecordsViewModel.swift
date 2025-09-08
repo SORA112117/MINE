@@ -426,8 +426,29 @@ class RecordsViewModel: ObservableObject {
     }
     
     func changeTimeScale(to timeScale: TimeScale) {
-        // タイムスケール変更時の処理
-        // タイムライン表示での期間変更に対応
+        let calendar = Calendar.current
+        let now = Date()
+        
+        switch timeScale {
+        case .week:
+            // 直近の一週間（7日前から今日まで）
+            if let weekAgo = calendar.date(byAdding: .day, value: -7, to: now) {
+                searchFilterState.dateRange = weekAgo...now
+            }
+            
+        case .month:
+            // 直近の一ヶ月（30日前から今日まで）
+            if let monthAgo = calendar.date(byAdding: .day, value: -30, to: now) {
+                searchFilterState.dateRange = monthAgo...now
+            }
+            
+        case .all:
+            // 全期間（フィルタなし）
+            searchFilterState.dateRange = nil
+        }
+        
+        // フィルタ更新を通知
+        applyFilters()
     }
     
     // MARK: - Sidebar Support（タグベース機能のみ）

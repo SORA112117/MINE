@@ -1,4 +1,5 @@
 import SwiftUI
+import AVFoundation
 
 // MARK: - Timeline Records View
 struct TimelineRecordsView: View {
@@ -738,10 +739,78 @@ struct CompactRecordCard: View {
             return
         }
         
-        // サムネイルを生成
-        ThumbnailGeneratorService.shared.generateThumbnail(for: record) { image in
+        // 既存のサムネイルURLを確認
+        if let thumbnailURL = record.thumbnailURL,
+           FileManager.default.fileExists(atPath: thumbnailURL.path),
+           let imageData = try? Data(contentsOf: thumbnailURL),
+           let image = UIImage(data: imageData) {
             self.thumbnailImage = image
             self.isLoadingThumbnail = false
+            return
+        }
+        
+        // サムネイル生成（シンプル化）
+        loadThumbnailFromOriginalFile()
+    }
+    
+    // 元ファイルから直接サムネイルを読み込み
+    private func loadThumbnailFromOriginalFile() {
+        switch record.type {
+        case .image:
+            // 画像の場合は直接読み込み
+            if FileManager.default.fileExists(atPath: record.fileURL.path),
+               let imageData = try? Data(contentsOf: record.fileURL),
+               let image = UIImage(data: imageData) {
+                // 簡単なリサイズ
+                let resizedImage = resizeImageSimple(image, to: CGSize(width: 90, height: 90))
+                self.thumbnailImage = resizedImage
+            }
+            self.isLoadingThumbnail = false
+            
+        case .video:
+            // 動画の場合は非同期で1フレーム目を取得
+            DispatchQueue.global(qos: .userInitiated).async {
+                let thumbnail = self.generateVideoThumbnailSimple(from: self.record.fileURL)
+                DispatchQueue.main.async {
+                    self.thumbnailImage = thumbnail
+                    self.isLoadingThumbnail = false
+                }
+            }
+            
+        case .audio:
+            // 音声は処理しない
+            self.isLoadingThumbnail = false
+        }
+    }
+    
+    // シンプルな画像リサイズ
+    private func resizeImageSimple(_ image: UIImage, to size: CGSize) -> UIImage {
+        UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
+        image.draw(in: CGRect(origin: .zero, size: size))
+        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
+        UIGraphicsEndImageContext()
+        return resizedImage ?? image
+    }
+    
+    // シンプルな動画サムネイル生成
+    private func generateVideoThumbnailSimple(from url: URL) -> UIImage? {
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            return nil
+        }
+        
+        let asset = AVAsset(url: url)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = CGSize(width: 90, height: 90)
+        
+        let time = CMTime(seconds: 0, preferredTimescale: 1)
+        
+        do {
+            let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
+            return UIImage(cgImage: cgImage)
+        } catch {
+            print("動画サムネイル生成エラー: \(error.localizedDescription)")
+            return nil
         }
     }
 }
