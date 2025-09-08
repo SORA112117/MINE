@@ -364,17 +364,31 @@ struct TimelineRecordCard: View {
     
     // MARK: - Actions
     private func loadThumbnail() {
+        // 音声の場合はデフォルトアイコンを使用
+        guard record.type != .audio else {
+            self.imageLoadState = .failed
+            return
+        }
+        
         Task {
-            do {
-                if let thumbnailURL = record.thumbnailURL,
-                   let imageData = try? Data(contentsOf: thumbnailURL),
-                   let image = UIImage(data: imageData) {
-                    await MainActor.run {
+            // まず既存のサムネイルURLを確認
+            if let thumbnailURL = record.thumbnailURL,
+               let imageData = try? Data(contentsOf: thumbnailURL),
+               let image = UIImage(data: imageData) {
+                await MainActor.run {
+                    self.thumbnailImage = image
+                    self.imageLoadState = .loaded
+                }
+                return
+            }
+            
+            // サムネイルが無い場合は生成
+            await MainActor.run {
+                ThumbnailGeneratorService.shared.generateThumbnail(for: record) { image in
+                    if let image = image {
                         self.thumbnailImage = image
                         self.imageLoadState = .loaded
-                    }
-                } else {
-                    await MainActor.run {
+                    } else {
                         self.imageLoadState = .failed
                     }
                 }

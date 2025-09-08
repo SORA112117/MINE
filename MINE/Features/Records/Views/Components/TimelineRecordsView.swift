@@ -57,11 +57,6 @@ struct TimelineRecordsView: View {
                 }
                 
                 Spacer()
-                
-                // 表示期間情報
-                Text(currentPeriodText)
-                    .font(.caption)
-                    .foregroundColor(Theme.gray4)
             }
             .padding(.horizontal)
         }
@@ -105,18 +100,11 @@ struct TimelineRecordsView: View {
                 viewModel.changeTimeScale(to: newValue)
             }
             
-            // 現在の期間表示
-            VStack(spacing: 8) {
-                Text(currentPeriodText)
-                    .font(.title2)
-                    .fontWeight(.semibold)
-                    .foregroundColor(Theme.text)
-                
-                if !viewModel.filteredRecords.isEmpty {
-                    Text("\(viewModel.filteredRecords.count) 件の記録")
-                        .font(.caption)
-                        .foregroundColor(Theme.gray5)
-                }
+            // 記録件数のみ表示
+            if !viewModel.filteredRecords.isEmpty {
+                Text("\(viewModel.filteredRecords.count) 件の記録")
+                    .font(.caption)
+                    .foregroundColor(Theme.gray5)
             }
         }
         .frame(maxWidth: .infinity)
@@ -222,11 +210,11 @@ struct TimelineRecordsView: View {
     private var currentPeriodText: String {
         switch selectedTimeScale {
         case .all:
-            return "全期間の記録"
+            return "全期間"
         case .week:
-            return "最近12週"
+            return "週"
         case .month:
-            return "最近12ヶ月"
+            return "月"
         }
     }
     
@@ -593,7 +581,7 @@ struct TagRowSection: View {
             
             // 横スクロール記録リスト（間隔調整）
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: 8) {
+                LazyHStack(spacing: 12) {
                     ForEach(records.sorted { $0.createdAt > $1.createdAt }, id: \.id) { record in
                         CompactRecordCard(
                             record: record,
@@ -621,6 +609,9 @@ struct CompactRecordCard: View {
     let isSelectionMode: Bool
     let onTap: () -> Void
     
+    @State private var thumbnailImage: UIImage?
+    @State private var isLoadingThumbnail = true
+    
     var body: some View {
         Button(action: {
             if isSelectionMode {
@@ -630,23 +621,21 @@ struct CompactRecordCard: View {
             onTap()
         }) {
             VStack(spacing: 4) {
-                // サムネイル/アイコン（小型化）
+                // サムネイル/アイコン
                 ZStack {
-                    RoundedRectangle(cornerRadius: 6)
+                    RoundedRectangle(cornerRadius: 8)
                         .fill(Theme.gray1)
-                        .frame(width: 60, height: 60)
+                        .frame(width: 90, height: 90)
                         .overlay(
-                            Image(systemName: record.type.systemImage)
-                                .font(.body)
-                                .foregroundColor(Theme.primary)
+                            thumbnailContent
                         )
                         .overlay(
                             // 選択時のオーバーレイ
                             isSelectionMode && isSelected ?
-                            RoundedRectangle(cornerRadius: 6)
+                            RoundedRectangle(cornerRadius: 8)
                                 .fill(Theme.primary.opacity(0.3))
                                 .overlay(
-                                    RoundedRectangle(cornerRadius: 6)
+                                    RoundedRectangle(cornerRadius: 8)
                                         .stroke(Theme.primary, lineWidth: 2)
                                 )
                             : nil
@@ -676,7 +665,7 @@ struct CompactRecordCard: View {
                             }
                             Spacer()
                         }
-                        .frame(width: 60, height: 60)
+                        .frame(width: 90, height: 90)
                         .padding(2)
                     }
                 }
@@ -694,7 +683,7 @@ struct CompactRecordCard: View {
                         .foregroundColor(Theme.gray4)
                 }
             }
-            .frame(width: 76)
+            .frame(width: 106)
             .background(
                 isSelectionMode && isSelected ?
                 Theme.primary.opacity(0.05) :
@@ -705,5 +694,47 @@ struct CompactRecordCard: View {
             .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
+        .onAppear {
+            loadThumbnail()
+        }
+    }
+    
+    // サムネイルコンテンツ
+    @ViewBuilder
+    private var thumbnailContent: some View {
+        if let thumbnailImage = thumbnailImage {
+            // 動画または画像のサムネイル
+            Image(uiImage: thumbnailImage)
+                .resizable()
+                .aspectRatio(contentMode: .fill)
+                .frame(width: 90, height: 90)
+                .clipped()
+                .cornerRadius(8)
+        } else if isLoadingThumbnail && record.type != .audio {
+            // ローディング中
+            ProgressView()
+                .scaleEffect(0.8)
+                .frame(width: 90, height: 90)
+        } else {
+            // デフォルトアイコン（音声または読み込み失敗）
+            Image(systemName: record.type.systemImage)
+                .font(.title2)
+                .foregroundColor(Theme.primary)
+        }
+    }
+    
+    // サムネイル読み込み
+    private func loadThumbnail() {
+        // 音声の場合はサムネイル読み込みをスキップ
+        guard record.type != .audio else {
+            isLoadingThumbnail = false
+            return
+        }
+        
+        // サムネイルを生成
+        ThumbnailGeneratorService.shared.generateThumbnail(for: record) { image in
+            self.thumbnailImage = image
+            self.isLoadingThumbnail = false
+        }
     }
 }
