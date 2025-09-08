@@ -14,6 +14,14 @@ class ThumbnailGeneratorService {
     
     // MARK: - Generate Thumbnail from Record
     func generateThumbnail(for record: Record, completion: @escaping (UIImage?) -> Void) {
+        // まず保存済みのサムネイルを確認
+        if let savedThumbnail = loadSavedThumbnail(for: record.id) {
+            DispatchQueue.main.async {
+                completion(savedThumbnail)
+            }
+            return
+        }
+        
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else {
                 DispatchQueue.main.async {
@@ -24,9 +32,9 @@ class ThumbnailGeneratorService {
             
             switch record.type {
             case .video:
-                self.generateVideoThumbnail(from: record.fileURL, completion: completion)
+                self.generateVideoThumbnail(from: record.fileURL, recordId: record.id, completion: completion)
             case .image:
-                self.generateImageThumbnail(from: record.fileURL, completion: completion)
+                self.generateImageThumbnail(from: record.fileURL, recordId: record.id, completion: completion)
             case .audio:
                 // 音声の場合はデフォルトアイコンを使用
                 DispatchQueue.main.async {
@@ -37,7 +45,7 @@ class ThumbnailGeneratorService {
     }
     
     // MARK: - Generate Video Thumbnail
-    private func generateVideoThumbnail(from url: URL, completion: @escaping (UIImage?) -> Void) {
+    private func generateVideoThumbnail(from url: URL, recordId: UUID, completion: @escaping (UIImage?) -> Void) {
         let asset = AVAsset(url: url)
         let imageGenerator = AVAssetImageGenerator(asset: asset)
         imageGenerator.appliesPreferredTrackTransform = true
@@ -53,6 +61,9 @@ class ThumbnailGeneratorService {
             // リサイズして返す
             let resizedImage = self.resizeImage(thumbnail, targetSize: thumbnailSize)
             
+            // サムネイルを保存
+            _ = self.saveThumbnail(resizedImage, for: recordId)
+            
             DispatchQueue.main.async {
                 completion(resizedImage)
             }
@@ -65,7 +76,7 @@ class ThumbnailGeneratorService {
     }
     
     // MARK: - Generate Image Thumbnail
-    private func generateImageThumbnail(from url: URL, completion: @escaping (UIImage?) -> Void) {
+    private func generateImageThumbnail(from url: URL, recordId: UUID, completion: @escaping (UIImage?) -> Void) {
         guard let imageData = try? Data(contentsOf: url),
               let image = UIImage(data: imageData) else {
             DispatchQueue.main.async {
@@ -76,6 +87,9 @@ class ThumbnailGeneratorService {
         
         // リサイズして返す
         let resizedImage = self.resizeImage(image, targetSize: thumbnailSize)
+        
+        // サムネイルを保存
+        _ = self.saveThumbnail(resizedImage, for: recordId)
         
         DispatchQueue.main.async {
             completion(resizedImage)
@@ -168,5 +182,39 @@ class ThumbnailGeneratorService {
         }
         
         return nil
+    }
+    
+    // MARK: - Load Saved Thumbnail
+    func loadSavedThumbnail(for recordId: UUID) -> UIImage? {
+        guard let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        
+        let thumbnailsDirectory = documentsDirectory.appendingPathComponent("Thumbnails")
+        let thumbnailURL = thumbnailsDirectory.appendingPathComponent("\(recordId.uuidString).jpg")
+        
+        // ファイルが存在するか確認
+        guard FileManager.default.fileExists(atPath: thumbnailURL.path),
+              let imageData = try? Data(contentsOf: thumbnailURL),
+              let image = UIImage(data: imageData) else {
+            return nil
+        }
+        
+        return image
+    }
+    
+    // MARK: - Delete Thumbnail
+    func deleteThumbnail(for recordId: UUID) {
+        guard let documentsDirectory = FileManager.default.urls(for: .documentDirectory, in: .userDomainMask).first else {
+            return
+        }
+        
+        let thumbnailsDirectory = documentsDirectory.appendingPathComponent("Thumbnails")
+        let thumbnailURL = thumbnailsDirectory.appendingPathComponent("\(recordId.uuidString).jpg")
+        
+        // ファイルが存在する場合は削除
+        if FileManager.default.fileExists(atPath: thumbnailURL.path) {
+            try? FileManager.default.removeItem(at: thumbnailURL)
+        }
     }
 }
