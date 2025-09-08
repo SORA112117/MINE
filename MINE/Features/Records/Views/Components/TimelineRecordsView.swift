@@ -589,12 +589,15 @@ struct TagRowSection: View {
                             isSelectionMode: isSelectionMode,
                             onTap: { onRecordTap(record) }
                         )
+                        .fixedSize(horizontal: true, vertical: false)  // サイズを固定
                     }
                 }
                 .padding(.horizontal)
+                .padding(.vertical, 4)  // 上下に余白を追加して見切れを防ぐ
             }
+            .frame(minHeight: 138)  // 最小高さを設定（カード高さ + パディング）
         }
-        .padding(.vertical, 8)
+        .padding(.vertical, 10)
         .padding(.horizontal, 12)
         .background(Color.white)
         .cornerRadius(10)
@@ -633,7 +636,7 @@ struct CompactRecordCard: View {
                             // 選択時のオーバーレイ
                             isSelectionMode && isSelected ?
                             RoundedRectangle(cornerRadius: 8)
-                                .fill(Theme.primary.opacity(0.3))
+                                .fill(Theme.primary.opacity(0.2))
                                 .overlay(
                                     RoundedRectangle(cornerRadius: 8)
                                         .stroke(Theme.primary, lineWidth: 2)
@@ -663,10 +666,11 @@ struct CompactRecordCard: View {
                                 }
                                 .shadow(color: Color.black.opacity(0.1), radius: 1, x: 0, y: 0.5)
                             }
+                            .padding(.trailing, 6)
+                            .padding(.top, 6)
                             Spacer()
                         }
                         .frame(width: 90, height: 90)
-                        .padding(2)
                     }
                 }
                 
@@ -685,12 +689,10 @@ struct CompactRecordCard: View {
             }
             .frame(width: 106)
             .background(
-                isSelectionMode && isSelected ?
-                Theme.primary.opacity(0.05) :
-                Color.clear
+                RoundedRectangle(cornerRadius: 8)
+                    .fill(isSelectionMode && isSelected ? Theme.primary.opacity(0.05) : Color.clear)
             )
-            .cornerRadius(8)
-            .scaleEffect(isSelectionMode && isSelected ? 0.98 : 1.0)
+            .clipShape(RoundedRectangle(cornerRadius: 8))
             .animation(.easeInOut(duration: 0.2), value: isSelected)
         }
         .buttonStyle(PlainButtonStyle())
