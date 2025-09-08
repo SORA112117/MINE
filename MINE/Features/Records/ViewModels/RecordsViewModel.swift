@@ -23,6 +23,21 @@ struct SearchFilterState {
     }
 }
 
+// MARK: - Deletion Error Types
+enum DeletionError: LocalizedError {
+    case partialFailure(succeeded: Int, failed: Int)
+    case allFailed(count: Int)
+    
+    var errorDescription: String? {
+        switch self {
+        case .partialFailure(let succeeded, let failed):
+            return "\(succeeded)件の記録を削除しましたが、\(failed)件の削除に失敗しました。"
+        case .allFailed(let count):
+            return "\(count)件の記録の削除にすべて失敗しました。"
+        }
+    }
+}
+
 // MARK: - Records ViewModel
 @MainActor
 class RecordsViewModel: ObservableObject {
@@ -122,13 +137,79 @@ class RecordsViewModel: ObservableObject {
         try await loadRecords()
     }
     
-    func deleteSelectedRecords() async throws {
-        for recordId in selectedRecords {
-            try await deleteRecordUseCase.execute(id: recordId)
+    // MARK: - Safe Deletion System
+    @Published var isDeletingRecords = false
+    @Published var deletionProgress: Double = 0.0
+    @Published var deletionError: Error?
+    
+    func deleteSelectedRecords() async {
+        // 削除中の状態管理
+        await MainActor.run {
+            isDeletingRecords = true
+            deletionProgress = 0.0
+            deletionError = nil
         }
-        selectedRecords.removeAll()
-        isSelectionMode = false
-        try await loadRecords()
+        
+        // 削除対象を一旦保存（selectedRecordsが変更される可能性があるため）
+        let recordsToDelete = selectedRecords
+        let totalCount = Double(recordsToDelete.count)
+        
+        guard totalCount > 0 else {
+            await finishDeletion()
+            return
+        }
+        
+        // 削除実行（エラー処理付き）
+        var deletedCount: Double = 0
+        var failedDeletions: [UUID] = []
+        
+        for recordId in recordsToDelete {
+            do {
+                try await deleteRecordUseCase.execute(id: recordId)
+                deletedCount += 1
+                
+                // プログレス更新
+                await MainActor.run {
+                    deletionProgress = deletedCount / totalCount
+                }
+                
+                // 削除成功したIDを選択状態から除去
+                await MainActor.run {
+                    selectedRecords.remove(recordId)
+                }
+                
+            } catch {
+                failedDeletions.append(recordId)
+                print("記録削除エラー ID: \(recordId), エラー: \(error)")
+            }
+        }
+        
+        // 削除完了後の処理
+        await finishDeletion()
+        
+        // エラーがあった場合はユーザーに通知
+        if !failedDeletions.isEmpty {
+            await MainActor.run {
+                deletionError = DeletionError.partialFailure(
+                    succeeded: Int(deletedCount),
+                    failed: failedDeletions.count
+                )
+            }
+        }
+    }
+    
+    @MainActor
+    private func finishDeletion() {
+        isDeletingRecords = false
+        deletionProgress = 1.0
+        
+        // 削除が完了したら選択モード終了
+        if selectedRecords.isEmpty {
+            isSelectionMode = false
+        }
+        
+        // データを再読み込み
+        loadData()
     }
     
     
@@ -208,12 +289,48 @@ class RecordsViewModel: ObservableObject {
         selectedRecords.removeAll()
     }
     
+    // MARK: - Safe Selection System
     func selectAll() {
-        selectedRecords = Set(filteredRecords.map { $0.id })
+        guard !isDeletingRecords else { return }
+        let availableRecords = filteredRecords.filter { record in
+            // 削除中でない記録のみ選択可能
+            !deletingRecordIds.contains(record.id)
+        }
+        selectedRecords = Set(availableRecords.map { $0.id })
     }
     
     func deselectAll() {
+        guard !isDeletingRecords else { return }
         selectedRecords.removeAll()
+    }
+    
+    func toggleRecordSelection(_ recordId: UUID) {
+        guard !isDeletingRecords else { return }
+        guard !deletingRecordIds.contains(recordId) else { return }
+        
+        if selectedRecords.contains(recordId) {
+            selectedRecords.remove(recordId)
+        } else {
+            selectedRecords.insert(recordId)
+        }
+    }
+    
+    // 削除中の記録ID（UI用）
+    @Published var deletingRecordIds: Set<UUID> = []
+    
+    // 選択状態のテキスト
+    var selectionStatusText: String {
+        if isDeletingRecords {
+            let progress = Int(deletionProgress * 100)
+            return "削除中... \(progress)%"
+        } else {
+            return "\(selectedRecords.count)件選択中"
+        }
+    }
+    
+    // 削除可能かどうか
+    var canDelete: Bool {
+        return !selectedRecords.isEmpty && !isDeletingRecords
     }
     
     // MARK: - Search & Filter
@@ -319,14 +436,6 @@ class RecordsViewModel: ObservableObject {
                searchFilterState.selectedType != nil ||
                !searchFilterState.selectedTags.isEmpty ||
                searchFilterState.dateRange != nil
-    }
-    
-    var selectionStatusText: String {
-        if selectedRecords.isEmpty {
-            return "項目を選択"
-        } else {
-            return "\(selectedRecords.count)件選択中"
-        }
     }
     
     // MARK: - Private Methods

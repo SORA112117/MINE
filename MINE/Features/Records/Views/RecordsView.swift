@@ -43,16 +43,30 @@ struct RecordsView: View {
                 BulkActionsView(viewModel: viewModel)
             }
             .confirmationDialog(
-                "選択した記録を削除しますか？",
+                "\(viewModel.selectedRecords.count)件の記録を削除しますか？",
                 isPresented: $showingDeleteConfirmation,
                 titleVisibility: .visible
             ) {
                 Button("削除", role: .destructive) {
                     Task {
-                        try await viewModel.deleteSelectedRecords()
+                        await viewModel.deleteSelectedRecords()
                     }
                 }
                 Button("キャンセル", role: .cancel) { }
+            }
+            // 削除エラーアラート
+            .alert("削除エラー", isPresented: .constant(viewModel.deletionError != nil)) {
+                Button("OK") {
+                    viewModel.deletionError = nil
+                }
+            } message: {
+                Text(viewModel.deletionError?.localizedDescription ?? "")
+            }
+            // 削除中プログレス表示
+            .overlay(alignment: .center) {
+                if viewModel.isDeletingRecords {
+                    deletionProgressView
+                }
             }
             .onAppear {
                 viewModel.loadData()
@@ -243,32 +257,73 @@ struct RecordsView: View {
     }
     
     private var selectionToolbar: some View {
-        HStack {
+        HStack(spacing: 16) {
+            // 削除ボタン（危険なアクションなので分離）
+            Button(action: { 
+                showingDeleteConfirmation = true 
+            }) {
+                Image(systemName: "trash")
+                    .foregroundColor(.red)
+            }
+            .disabled(!viewModel.canDelete)
+            
+            // その他アクション
             Menu {
                 Button(action: { viewModel.selectAll() }) {
                     Label("すべて選択", systemImage: "checkmark.circle")
                 }
+                .disabled(viewModel.isDeletingRecords)
+                
                 Button(action: { viewModel.deselectAll() }) {
                     Label("選択解除", systemImage: "circle")
                 }
+                .disabled(viewModel.isDeletingRecords)
+                
+                Divider()
+                
+                Button(action: { showingBulkActions = true }) {
+                    Label("一括操作", systemImage: "square.and.arrow.up")
+                }
+                .disabled(viewModel.selectedRecords.isEmpty || viewModel.isDeletingRecords)
+                
             } label: {
                 Image(systemName: "ellipsis.circle")
             }
-            
-            Button(action: { showingBulkActions = true }) {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .disabled(viewModel.selectedRecords.isEmpty)
+            .disabled(viewModel.isDeletingRecords)
         }
     }
     
     // MARK: - Actions
     private func handleRecordTap(_ record: Record) {
         if viewModel.isSelectionMode {
-            viewModel.toggleSelection(for: record.id)
+            viewModel.toggleRecordSelection(record.id)
         } else {
             appCoordinator.showRecordDetail(record)
         }
+    }
+    
+    // MARK: - Deletion Progress View
+    private var deletionProgressView: some View {
+        VStack(spacing: 16) {
+            ProgressView(value: viewModel.deletionProgress)
+                .progressViewStyle(CircularProgressViewStyle(tint: .red))
+                .scaleEffect(1.5)
+            
+            Text(viewModel.selectionStatusText)
+                .font(.headline)
+                .foregroundColor(.primary)
+            
+            Text("削除をキャンセルできません")
+                .font(.caption)
+                .foregroundColor(.secondary)
+        }
+        .padding(24)
+        .background(
+            RoundedRectangle(cornerRadius: 16)
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.1), radius: 10)
+        )
+        .frame(maxWidth: 280)
     }
 }
 
