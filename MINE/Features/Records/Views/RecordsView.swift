@@ -86,13 +86,52 @@ struct RecordsView: View {
             // 検索バー
             searchBar
             
-            // アクティブフィルター表示
-            if viewModel.hasActiveFilters {
-                activeFiltersView
+            // 検索バー以下のコンテンツ（高度な人間工学的アニメーション）
+            VStack(spacing: 0) {
+                // アクティブフィルター表示（階層的遷移）
+                if viewModel.hasActiveFilters {
+                    activeFiltersView
+                        .transition(.asymmetric(
+                            insertion: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95)),
+                            removal: .move(edge: .top).combined(with: .opacity).combined(with: .scale(scale: 0.95))
+                        ))
+                        .animation(.spring(response: 0.4, dampingFraction: 0.8), value: viewModel.hasActiveFilters)
+                }
+                
+                // メインコンテンツ
+                recordsContent
             }
-            
-            // メインコンテンツ
-            recordsContent
+            // 多軸同期アニメーション（人間工学的改善）
+            .opacity(viewModel.isContentFading ? 0.3 : 1.0)
+            .offset(
+                x: viewModel.contentOffset, 
+                y: viewModel.contentVerticalOffset
+            )
+            .scaleEffect(viewModel.contentScale)
+            .blur(radius: viewModel.backgroundBlur)
+            // 段階的アニメーション適用
+            .animation(
+                viewModel.currentAnimationPhase == .preparation ? 
+                    .spring(response: 0.2, dampingFraction: 0.9) :
+                viewModel.currentAnimationPhase == .fadeOut ?
+                    .easeOut(duration: 0.4) :
+                viewModel.currentAnimationPhase == .fadeIn ?
+                    .spring(response: 0.6, dampingFraction: 0.8) :
+                    .spring(response: 0.3, dampingFraction: 1.0),
+                value: viewModel.isContentFading
+            )
+            .animation(
+                .easeInOut(duration: 0.3),
+                value: viewModel.contentOffset
+            )
+            .animation(
+                .spring(response: 0.4, dampingFraction: 0.8),
+                value: viewModel.contentScale
+            )
+            .animation(
+                .easeOut(duration: 0.3),
+                value: viewModel.backgroundBlur
+            )
         }
     }
     
@@ -116,40 +155,104 @@ struct RecordsView: View {
         }
     }
     
-    // MARK: - Search Bar
+    // MARK: - Search Bar (視覚的階層改善版)
     private var searchBar: some View {
-        HStack {
-            HStack {
+        HStack(spacing: 12) {
+            // メイン検索フィールド（認知負荷軽減）
+            HStack(spacing: 10) {
                 Image(systemName: "magnifyingglass")
-                    .foregroundColor(Theme.gray4)
+                    .foregroundColor(viewModel.searchFilterState.searchText.isEmpty ? Theme.gray4 : Theme.primary)
+                    .font(.system(size: 16, weight: .medium))
+                    .animation(.easeInOut(duration: 0.2), value: viewModel.searchFilterState.searchText.isEmpty)
                 
                 TextField("記録を検索", text: Binding(
                     get: { viewModel.searchFilterState.searchText },
                     set: { viewModel.updateSearchText($0) }
                 ))
                 .textFieldStyle(PlainTextFieldStyle())
+                .font(.system(size: 16))
                 
+                // クリアボタン（アニメーション改善）
                 if !viewModel.searchFilterState.searchText.isEmpty {
-                    Button(action: { viewModel.updateSearchText("") }) {
+                    Button(action: { 
+                        let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                        impactFeedback.impactOccurred()
+                        viewModel.updateSearchText("") 
+                    }) {
                         Image(systemName: "xmark.circle.fill")
                             .foregroundColor(Theme.gray4)
+                            .font(.system(size: 16))
+                    }
+                    .transition(.asymmetric(
+                        insertion: .scale(scale: 0.8).combined(with: .opacity),
+                        removal: .scale(scale: 0.8).combined(with: .opacity)
+                    ))
+                    .animation(.spring(response: 0.3, dampingFraction: 0.7), value: viewModel.searchFilterState.searchText.isEmpty)
+                }
+            }
+            .padding(.horizontal, 16)
+            .padding(.vertical, 12)
+            .background(
+                RoundedRectangle(cornerRadius: 12)
+                    .fill(Theme.gray1)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 12)
+                            .stroke(
+                                viewModel.searchFilterState.searchText.isEmpty ? Color.clear : Theme.primary.opacity(0.3),
+                                lineWidth: 1
+                            )
+                    )
+            )
+            .animation(.easeInOut(duration: 0.2), value: viewModel.searchFilterState.searchText.isEmpty)
+            
+            // フィルターボタン（視覚的重要度明確化）
+            Button(action: { 
+                let impactFeedback = UIImpactFeedbackGenerator(style: .medium)
+                impactFeedback.impactOccurred()
+                showingSearchFilters = true 
+            }) {
+                ZStack {
+                    RoundedRectangle(cornerRadius: 10)
+                        .fill(viewModel.hasActiveFilters ? Theme.primary.opacity(0.15) : Theme.gray1)
+                        .frame(width: 44, height: 44)
+                        .overlay(
+                            RoundedRectangle(cornerRadius: 10)
+                                .stroke(
+                                    viewModel.hasActiveFilters ? Theme.primary : Color.clear,
+                                    lineWidth: viewModel.hasActiveFilters ? 1.5 : 0
+                                )
+                        )
+                    
+                    Image(systemName: viewModel.hasActiveFilters ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease.circle")
+                        .foregroundColor(viewModel.hasActiveFilters ? Theme.primary : Theme.gray4)
+                        .font(.system(size: 18, weight: .medium))
+                    
+                    // アクティブフィルター数のバッジ
+                    if viewModel.hasActiveFilters {
+                        VStack {
+                            HStack {
+                                Spacer()
+                                Circle()
+                                    .fill(.red)
+                                    .frame(width: 8, height: 8)
+                                    .offset(x: 2, y: -2)
+                            }
+                            Spacer()
+                        }
+                        .frame(width: 44, height: 44)
                     }
                 }
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(Theme.gray1)
-            .cornerRadius(10)
-            
-            Button(action: { showingSearchFilters = true }) {
-                Image(systemName: viewModel.hasActiveFilters ? "line.horizontal.3.decrease.circle.fill" : "line.horizontal.3.decrease.circle")
-                    .foregroundColor(viewModel.hasActiveFilters ? Theme.primary : Theme.gray4)
-                    .font(.title3)
-            }
+            .scaleEffect(viewModel.hasActiveFilters ? 1.05 : 1.0)
+            .animation(.spring(response: 0.3, dampingFraction: 0.6), value: viewModel.hasActiveFilters)
         }
-        .padding(.horizontal)
-        .padding(.vertical, 8)
-        .background(Color.white)
+        .padding(.horizontal, 16)
+        .padding(.vertical, 12)
+        .background(
+            Rectangle()
+                .fill(.ultraThinMaterial)
+                .shadow(color: .black.opacity(0.05), radius: 1, x: 0, y: 1)
+        )
     }
     
     // MARK: - Active Filters View
@@ -214,34 +317,89 @@ struct RecordsView: View {
     }
     
     private var loadingView: some View {
-        VStack {
-            ProgressView()
-            Text("記録を読み込み中...")
-                .foregroundColor(Theme.gray5)
-                .padding(.top)
+        VStack(spacing: 20) {
+            // 改善されたローディングアニメーション
+            ZStack {
+                Circle()
+                    .stroke(Theme.gray2, lineWidth: 4)
+                    .frame(width: 50, height: 50)
+                
+                Circle()
+                    .trim(from: 0, to: 0.7)
+                    .stroke(Theme.primary, style: StrokeStyle(lineWidth: 4, lineCap: .round))
+                    .frame(width: 50, height: 50)
+                    .rotationEffect(.degrees(-90))
+                    .rotation3DEffect(
+                        .degrees(360),
+                        axis: (x: 0, y: 0, z: 1),
+                        perspective: 1.0
+                    )
+                    .animation(.linear(duration: 1.0).repeatForever(autoreverses: false), value: viewModel.isLoading)
+            }
+            
+            VStack(spacing: 8) {
+                Text("記録を読み込み中...")
+                    .font(.headline)
+                    .fontWeight(.medium)
+                    .foregroundColor(Theme.text)
+                
+                Text("しばらくお待ちください")
+                    .font(.caption)
+                    .foregroundColor(Theme.gray5)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(Theme.background)
     }
     
     private var emptyStateView: some View {
-        VStack(spacing: 16) {
-            Image(systemName: "folder")
-                .font(.system(size: 60))
-                .foregroundColor(Theme.gray4)
+        VStack(spacing: 24) {
+            // 認知負荷を軽減するアイコン（コンテキスト明確化）
+            ZStack {
+                Circle()
+                    .fill(Theme.gray1)
+                    .frame(width: 120, height: 120)
+                
+                Image(systemName: viewModel.hasActiveFilters ? "magnifyingglass" : "plus.circle")
+                    .font(.system(size: 50, weight: .light))
+                    .foregroundColor(Theme.primary.opacity(0.7))
+            }
             
-            Text("記録がありません")
-                .font(.headline)
-                .foregroundColor(Theme.text)
+            VStack(spacing: 12) {
+                Text(viewModel.hasActiveFilters ? "該当する記録なし" : "記録がありません")
+                    .font(.title2)
+                    .fontWeight(.semibold)
+                    .foregroundColor(Theme.text)
+                
+                Text(viewModel.hasActiveFilters ? 
+                    "検索条件を変更するか、\n新しい記録を作成してください" : 
+                    "右上の＋ボタンから\n最初の記録を作成しましょう")
+                    .font(.body)
+                    .foregroundColor(Theme.gray5)
+                    .multilineTextAlignment(.center)
+                    .lineSpacing(4)
+            }
             
-            Text(viewModel.hasActiveFilters ? 
-                "検索条件に一致する記録が見つかりませんでした" : 
-                "記録を作成してみましょう")
+            // アクション提案（認知負荷軽減）
+            if viewModel.hasActiveFilters {
+                Button("フィルターをクリア") {
+                    let impactFeedback = UIImpactFeedbackGenerator(style: .light)
+                    impactFeedback.impactOccurred()
+                    viewModel.clearFilters()
+                }
                 .font(.subheadline)
-                .foregroundColor(Theme.gray5)
-                .multilineTextAlignment(.center)
-                .padding(.horizontal, 32)
+                .fontWeight(.medium)
+                .foregroundColor(Theme.primary)
+                .padding(.horizontal, 20)
+                .padding(.vertical, 10)
+                .background(
+                    RoundedRectangle(cornerRadius: 20)
+                        .fill(Theme.primary.opacity(0.1))
+                )
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .padding(.horizontal, 40)
     }
     
     
@@ -302,28 +460,72 @@ struct RecordsView: View {
         }
     }
     
-    // MARK: - Deletion Progress View
+    // MARK: - Deletion Progress View (認知科学的改善版)
     private var deletionProgressView: some View {
-        VStack(spacing: 16) {
+        VStack(spacing: 20) {
+            // アニメーション付きプログレス
+            ZStack {
+                Circle()
+                    .stroke(Color.red.opacity(0.2), lineWidth: 8)
+                    .frame(width: 80, height: 80)
+                
+                Circle()
+                    .trim(from: 0, to: viewModel.deletionProgress)
+                    .stroke(Color.red, style: StrokeStyle(lineWidth: 8, lineCap: .round))
+                    .frame(width: 80, height: 80)
+                    .rotationEffect(.degrees(-90))
+                    .animation(.easeInOut(duration: 0.3), value: viewModel.deletionProgress)
+                
+                // 中央のアイコン（認知負荷軽減）
+                Image(systemName: "trash.fill")
+                    .font(.title2)
+                    .foregroundColor(.red)
+                    .scaleEffect(sin(Date().timeIntervalSince1970 * 3) * 0.1 + 1.0) // 微細な脈動効果
+                    .animation(.easeInOut(duration: 1).repeatForever(autoreverses: true), value: viewModel.isDeletingRecords)
+            }
+            
+            // 状態テキスト（階層明確化）
+            VStack(spacing: 8) {
+                Text("削除中...")
+                    .font(.headline)
+                    .fontWeight(.semibold)
+                    .foregroundColor(.primary)
+                
+                Text("\(Int(viewModel.deletionProgress * 100))% 完了")
+                    .font(.subheadline)
+                    .foregroundColor(.secondary)
+                    .opacity(0.8)
+                
+                // プロセス説明（認知負荷軽減）
+                Text("ファイルとデータを安全に削除しています")
+                    .font(.caption2)
+                    .foregroundColor(.secondary)
+                    .multilineTextAlignment(.center)
+                    .opacity(0.7)
+            }
+            
+            // 進行状況バー（追加視覚情報）
             ProgressView(value: viewModel.deletionProgress)
-                .progressViewStyle(CircularProgressViewStyle(tint: .red))
-                .scaleEffect(1.5)
-            
-            Text(viewModel.selectionStatusText)
-                .font(.headline)
-                .foregroundColor(.primary)
-            
-            Text("削除をキャンセルできません")
-                .font(.caption)
-                .foregroundColor(.secondary)
+                .progressViewStyle(LinearProgressViewStyle(tint: .red))
+                .scaleEffect(y: 2)
+                .cornerRadius(4)
+                .frame(width: 200)
         }
-        .padding(24)
+        .padding(32)
         .background(
-            RoundedRectangle(cornerRadius: 16)
+            RoundedRectangle(cornerRadius: 20)
                 .fill(.ultraThinMaterial)
-                .shadow(color: .black.opacity(0.1), radius: 10)
+                .shadow(color: .black.opacity(0.15), radius: 20, x: 0, y: 10)
+                .overlay(
+                    RoundedRectangle(cornerRadius: 20)
+                        .stroke(.white.opacity(0.2), lineWidth: 1)
+                )
         )
-        .frame(maxWidth: 280)
+        .frame(maxWidth: 320)
+        .transition(.asymmetric(
+            insertion: .scale.combined(with: .opacity),
+            removal: .scale(scale: 0.8).combined(with: .opacity)
+        ))
     }
 }
 

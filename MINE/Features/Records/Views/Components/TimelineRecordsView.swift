@@ -731,7 +731,7 @@ struct CompactRecordCard: View {
         }
     }
     
-    // サムネイル読み込み
+    // Advanced Thumbnail Loading System（類似システム参考）
     private func loadThumbnail() {
         // 音声の場合はサムネイル読み込みをスキップ
         guard record.type != .audio else {
@@ -739,78 +739,63 @@ struct CompactRecordCard: View {
             return
         }
         
-        // 既存のサムネイルURLを確認
-        if let thumbnailURL = record.thumbnailURL,
-           FileManager.default.fileExists(atPath: thumbnailURL.path),
-           let imageData = try? Data(contentsOf: thumbnailURL),
-           let image = UIImage(data: imageData) {
-            self.thumbnailImage = image
-            self.isLoadingThumbnail = false
+        // デバウンスロジック（既に処理中の場合は早期リターン）
+        guard thumbnailImage == nil else {
+            // 既に読み込み済みの場合は即座に完了状態に
+            isLoadingThumbnail = false
             return
         }
         
-        // サムネイル生成（シンプル化）
-        loadThumbnailFromOriginalFile()
-    }
-    
-    // 元ファイルから直接サムネイルを読み込み
-    private func loadThumbnailFromOriginalFile() {
-        switch record.type {
-        case .image:
-            // 画像の場合は直接読み込み
-            if FileManager.default.fileExists(atPath: record.fileURL.path),
-               let imageData = try? Data(contentsOf: record.fileURL),
-               let image = UIImage(data: imageData) {
-                // 簡単なリサイズ
-                let resizedImage = resizeImageSimple(image, to: CGSize(width: 90, height: 90))
-                self.thumbnailImage = resizedImage
+        // 二重読み込み防止
+        guard !isLoadingThumbnail else { return }
+        
+        isLoadingThumbnail = true
+        
+        // Phase 1: 保存済みサムネイルの即座確認（メモリ効率重視）
+        if let savedThumbnail = ThumbnailGeneratorService.shared.loadSavedThumbnail(for: record.id) {
+            DispatchQueue.main.async {
+                self.thumbnailImage = savedThumbnail
+                self.isLoadingThumbnail = false
             }
-            self.isLoadingThumbnail = false
+            return
+        }
+        
+        // Phase 2: バックグラウンドで生成（Photos.app方式）
+        DispatchQueue.global(qos: .userInitiated).async {
+            var generatedThumbnail: UIImage?
             
-        case .video:
-            // 動画の場合は非同期で1フレーム目を取得
-            DispatchQueue.global(qos: .userInitiated).async {
-                let thumbnail = self.generateVideoThumbnailSimple(from: self.record.fileURL)
-                DispatchQueue.main.async {
-                    self.thumbnailImage = thumbnail
-                    self.isLoadingThumbnail = false
+            // タイムアウト付きで生成（5秒制限）
+            let semaphore = DispatchSemaphore(value: 0)
+            var completionCalled = false
+            
+            ThumbnailGeneratorService.shared.generateThumbnail(for: self.record) { thumbnail in
+                if !completionCalled {
+                    completionCalled = true
+                    generatedThumbnail = thumbnail
+                    semaphore.signal()
                 }
             }
             
-        case .audio:
-            // 音声は処理しない
-            self.isLoadingThumbnail = false
+            // タイムアウト処理（5秒でタイムアウト）
+            let result = semaphore.wait(timeout: .now() + 5.0)
+            
+            DispatchQueue.main.async {
+                if result == .success, let thumbnail = generatedThumbnail {
+                    // 成功時
+                    self.thumbnailImage = thumbnail
+                } else {
+                    // タイムアウトまたは失敗時
+                    print("サムネイル生成タイムアウト/失敗: \(self.record.id)")
+                }
+                
+                self.isLoadingThumbnail = false
+            }
         }
     }
     
-    // シンプルな画像リサイズ
-    private func resizeImageSimple(_ image: UIImage, to size: CGSize) -> UIImage {
-        UIGraphicsBeginImageContextWithOptions(size, false, 0.0)
-        image.draw(in: CGRect(origin: .zero, size: size))
-        let resizedImage = UIGraphicsGetImageFromCurrentImageContext()
-        UIGraphicsEndImageContext()
-        return resizedImage ?? image
-    }
+    // 古いloadThumbnailFromOriginalFile関数を削除（ThumbnailGeneratorServiceを使用）
     
-    // シンプルな動画サムネイル生成
-    private func generateVideoThumbnailSimple(from url: URL) -> UIImage? {
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            return nil
-        }
-        
-        let asset = AVAsset(url: url)
-        let imageGenerator = AVAssetImageGenerator(asset: asset)
-        imageGenerator.appliesPreferredTrackTransform = true
-        imageGenerator.maximumSize = CGSize(width: 90, height: 90)
-        
-        let time = CMTime(seconds: 0, preferredTimescale: 1)
-        
-        do {
-            let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
-            return UIImage(cgImage: cgImage)
-        } catch {
-            print("動画サムネイル生成エラー: \(error.localizedDescription)")
-            return nil
-        }
-    }
+    // 古いresizeImageSimple関数を削除（ThumbnailGeneratorServiceを使用）
+    
+    // 古いgenerateVideoThumbnailSimple関数を削除（ThumbnailGeneratorServiceを使用）
 }

@@ -12,9 +12,9 @@ class ThumbnailGeneratorService {
     // サムネイルサイズ
     private let thumbnailSize = CGSize(width: 180, height: 180)
     
-    // MARK: - Generate Thumbnail from Record
+    // MARK: - Advanced Thumbnail Generation System (類似システム参考実装)
     func generateThumbnail(for record: Record, completion: @escaping (UIImage?) -> Void) {
-        // まず保存済みのサムネイルを確認
+        // Phase 1: 即座にキャッシュ確認（Instagram方式）
         if let savedThumbnail = loadSavedThumbnail(for: record.id) {
             DispatchQueue.main.async {
                 completion(savedThumbnail)
@@ -22,6 +22,16 @@ class ThumbnailGeneratorService {
             return
         }
         
+        // Phase 2: ファイル存在確認（堅牢性向上）
+        guard FileManager.default.fileExists(atPath: record.fileURL.path) else {
+            print("ファイルが存在しません: \(record.fileURL.path)")
+            DispatchQueue.main.async {
+                completion(nil)
+            }
+            return
+        }
+        
+        // Phase 3: 並行処理で生成（YouTube方式の効率化）
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
             guard let self = self else {
                 DispatchQueue.main.async {
@@ -30,18 +40,136 @@ class ThumbnailGeneratorService {
                 return
             }
             
-            switch record.type {
-            case .video:
-                self.generateVideoThumbnail(from: record.fileURL, recordId: record.id, completion: completion)
-            case .image:
-                self.generateImageThumbnail(from: record.fileURL, recordId: record.id, completion: completion)
-            case .audio:
-                // 音声の場合はデフォルトアイコンを使用
+            // タイムアウト機構（堅牢性向上）
+            let timeoutTimer = Timer.scheduledTimer(withTimeInterval: 10.0, repeats: false) { _ in
+                print("サムネイル生成タイムアウト: \(record.id)")
                 DispatchQueue.main.async {
                     completion(nil)
                 }
             }
+            
+            let generateAndComplete: (UIImage?) -> Void = { thumbnail in
+                timeoutTimer.invalidate()
+                DispatchQueue.main.async {
+                    completion(thumbnail)
+                }
+            }
+            
+            switch record.type {
+            case .video:
+                self.generateVideoThumbnailRobust(from: record.fileURL, recordId: record.id, completion: generateAndComplete)
+            case .image:
+                self.generateImageThumbnailRobust(from: record.fileURL, recordId: record.id, completion: generateAndComplete)
+            case .audio:
+                // 音声の場合はデフォルトアイコンを使用
+                generateAndComplete(nil)
+            }
         }
+    }
+    
+    // MARK: - Robust Thumbnail Generation Methods（堅牢性向上版）
+    
+    private func generateVideoThumbnailRobust(from url: URL, recordId: UUID, completion: @escaping (UIImage?) -> Void) {
+        let asset = AVAsset(url: url)
+        
+        // 非同期でアセットの準備確認
+        Task {
+            do {
+                // iOS 15+ の async/await を使用
+                let duration = try await asset.load(.duration)
+                guard duration.isValid && duration.seconds > 0 else {
+                    print("無効な動画ファイル: \(url)")
+                    completion(nil)
+                    return
+                }
+                
+                let imageGenerator = AVAssetImageGenerator(asset: asset)
+                imageGenerator.appliesPreferredTrackTransform = true
+                imageGenerator.maximumSize = thumbnailSize
+                imageGenerator.requestedTimeToleranceAfter = .zero
+                imageGenerator.requestedTimeToleranceBefore = .zero
+                
+                // 最適なフレーム選択（1秒目、または動画の1/10地点）
+                let targetTime: CMTime
+                if duration.seconds > 10 {
+                    targetTime = CMTime(seconds: 1.0, preferredTimescale: 600)
+                } else {
+                    targetTime = CMTime(seconds: duration.seconds * 0.1, preferredTimescale: 600)
+                }
+                
+                let cgImage = try await imageGenerator.image(at: targetTime).image
+                let thumbnail = UIImage(cgImage: cgImage)
+                let resizedImage = self.resizeImage(thumbnail, targetSize: self.thumbnailSize)
+                
+                // サムネイルを保存
+                _ = self.saveThumbnail(resizedImage, for: recordId)
+                
+                completion(resizedImage)
+                
+            } catch {
+                print("動画サムネイル生成エラー (robust): \(error)")
+                // フォールバック: 従来の同期方式
+                self.generateVideoThumbnailFallback(from: url, recordId: recordId, completion: completion)
+            }
+        }
+    }
+    
+    private func generateVideoThumbnailFallback(from url: URL, recordId: UUID, completion: @escaping (UIImage?) -> Void) {
+        let asset = AVAsset(url: url)
+        let imageGenerator = AVAssetImageGenerator(asset: asset)
+        imageGenerator.appliesPreferredTrackTransform = true
+        imageGenerator.maximumSize = thumbnailSize
+        
+        let time = CMTime(seconds: 0, preferredTimescale: 1)
+        
+        do {
+            let cgImage = try imageGenerator.copyCGImage(at: time, actualTime: nil)
+            let thumbnail = UIImage(cgImage: cgImage)
+            let resizedImage = self.resizeImage(thumbnail, targetSize: thumbnailSize)
+            
+            _ = self.saveThumbnail(resizedImage, for: recordId)
+            completion(resizedImage)
+        } catch {
+            print("動画サムネイル生成フォールバックエラー: \(error)")
+            completion(nil)
+        }
+    }
+    
+    private func generateImageThumbnailRobust(from url: URL, recordId: UUID, completion: @escaping (UIImage?) -> Void) {
+        // Core Graphics を直接使用（メモリ効率重視）
+        guard let imageSource = CGImageSourceCreateWithURL(url as CFURL, nil) else {
+            print("画像ソース作成失敗: \(url)")
+            completion(nil)
+            return
+        }
+        
+        // 画像メタデータ確認
+        guard CGImageSourceGetCount(imageSource) > 0 else {
+            print("画像データなし: \(url)")
+            completion(nil)
+            return
+        }
+        
+        // 効率的なサムネイル生成設定
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageIfAbsent: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceShouldCacheImmediately: false,
+            kCGImageSourceThumbnailMaxPixelSize: max(thumbnailSize.width, thumbnailSize.height)
+        ]
+        
+        guard let cgImage = CGImageSourceCreateThumbnailAtIndex(imageSource, 0, options as CFDictionary) else {
+            print("サムネイル作成失敗: \(url)")
+            completion(nil)
+            return
+        }
+        
+        let thumbnail = UIImage(cgImage: cgImage)
+        let resizedImage = self.resizeImage(thumbnail, targetSize: thumbnailSize)
+        
+        // サムネイルを保存
+        _ = self.saveThumbnail(resizedImage, for: recordId)
+        completion(resizedImage)
     }
     
     // MARK: - Generate Video Thumbnail
